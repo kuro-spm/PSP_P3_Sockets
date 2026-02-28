@@ -1,0 +1,36 @@
+## --- Fitxers de Visual Studio ---
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## --- Carpetes de sortida de compilació (Windows/MSVC) ---
+Debug/
+Release/
+x64/
+x86/
+
+## --- Carpetes de sortida de compilació (Linux/WSL) ---
+# Visual Studio crea una carpeta oculta a l'arrel per als binaris de Linux
+bin/
+obj/
+out/
+
+## --- Fitxers temporals de compilació ---
+*.obj
+*.pdb
+*.ilk
+*.aps
+*.ncb
+*.opendb
+*.sdf
+*.cache
+*.log
+*.tlog
+*.lastbuildstate
+
+## --- Fitxers de diagnòstic i subproductes de GCC ---
+*.o
+*.out
+*.gch

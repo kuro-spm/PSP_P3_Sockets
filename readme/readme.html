@@ -1,0 +1,77 @@
+﻿<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+
+    <link rel="stylesheet" type="text/css" href="stylesheet.css" media="screen">
+
+    <title>Introducción</title>
+  </head>
+
+<body>
+
+    <div class="container">
+        <div id="header">
+            <h1>Introducción</h1>
+            <h2>Visual C++ para el desarrollo remoto</h2>
+        </div>
+    
+    <table>
+    <tr>    
+    <div id="main_content">
+        
+        <td>
+        <div id="lpanel">
+            <h1>Configuración del proyecto para el desarrollo remoto</h1>
+
+            <p>Con esta carga de trabajo puede crear código de C++ para servidores, escritorios y dispositivos. Puede administrar las conexiones a estas máquinas desde VS. VS copiará y compilará de forma remota los orígenes de forma automática y podrá iniciar la aplicación con el depurador. Nuestro sistema de proyectos admite el destino de arquitecturas específicas, incluido ARM.</p>
+            <img src="images\ArchOptions.gif"/>
+            
+            <h1>Conectando con la máquina remota</h1>
+            <h2>Requisitos previos</h2>
+            <p>Actualmente solo se admite la compilación de forma remota en el equipo de destino. Tenemos dependencias en la presencia de algunas herramientas. En concreto, necesitamos openssh-server, g++, gdb y gdbserver. Use su administrador de paquetes favorito para instalarlos, por ejemplo, en sistemas basados en Debian: sudo apt-get install openssh-server g++ gdb gdbserver</p>
+            
+            <h2>Primera conexión</h2>
+            <p>La primera vez que se dirija a un equipo remoto, se le pedirá información de conexión.  Esto se desencadena mediante la compilación del proyecto.</p>
+            <img src="images\firstconnection.png"/>
+                
+            <h2>Agregar y quitar conexiones</h2>
+            <p>Para agregar una conexión nueva, vaya a Herramientas > Opciones y busque Conexión; Connection Manager estará bajo Multiplataforma. Desde aquí puede agregar y quitar conexiones.</p>
+            <img src="images\ManageConnections.gif"/>
+            
+            <p>Para cambiar la conexión que usa un proyecto, vaya a la configuración general de propiedades del proyecto y actualice la opción Máquina de compilación remota.</p>
+            <img src="images\ChangeRemote.gif"/>
+            
+            <h1>Propiedades del proyecto</h1>
+            <p>Todas las opciones necesarias para controlar la compilación de C++ se exponen en las páginas de propiedades del proyecto. Trataremos algunos aspectos específicos de cómo funcionan las cosas para las máquinas remotas. En primer lugar, en la configuración general, verá que la raíz remota está establecida en ~/projects/ de forma predeterminada y que estamos configurando el directorio del proyecto remoto para que coincida con el nombre del proyecto en esa ubicación.</p>
+            <img src="images\OutputTypes.gif"/>
+            
+            <p>Observando la configuración general del proyecto, puede ver cómo se configuraron nuestros directorios de salida e intermedios. Además, verá que este proyecto se configuró como una aplicación; por tanto, nuestro archivo ejecutable está en bin/x64/Debug/ como ConsoleApplication1.out. Tenga en cuenta que en los tipos de configuración también se admiten bibliotecas estáticas y dinámicas.</p>
+            
+            <p>Agregue dependencias de biblioteca adicionales en la página Enlazador > Propiedad de entrada.</p>
+            <img src="images\linker.png"/>
+            
+            <p>Puede pasar comandos previos al inicio adicionales al depurador para hacer cosas como iniciar aplicaciones gráficas en el equipo remoto.</p>
+            <img src="images\debuggerexport.png"/>
+            
+            <p>También puede enviar eventos posteriores a la compilación para controlar el comportamiento remoto, como en este ejemplo, en el que se exporta un PIN de GPIO para su uso sin necesidad de ejecutar el elemento ejecutable como superusuario.</p>
+            <img src="images\postbuild.png"/>
+            
+        </div>
+        </td>
+        <td>
+        <div id="rpanel">
+
+            <h1>Recursos</h1>
+
+            <p>Consulte la <a href="http://aka.ms/vslinux">página de VC++ for Linux Development</a>, donde iremos publicando actualizaciones y ofreceremos más información a los proveedores sobre el uso.</p>
+            <h1>Envíenos sus comentarios</h1>
+            <p>Use la función enviar comentarios en Visual Studio o póngase en contacto con nosotros a través de <a href=" https://developercommunity.visualstudio.com/">Developer Community</a></p>
+        </div>
+        </td>   
+    </div>
+    </tr>
+    </table>
+    </div>
+</body>
+</html>
