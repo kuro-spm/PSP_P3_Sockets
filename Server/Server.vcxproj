@@ -81,6 +81,9 @@
   <ItemGroup>
     <ClInclude Include="servidor_ftp.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="usuaris.txt" />
+  </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
       <AdditionalDependencies>

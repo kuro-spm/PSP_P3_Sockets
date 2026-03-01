@@ -5,7 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define PORT 10001
+#define PORT 10235
 
 typedef struct {
     int operacio;

@@ -9,9 +9,8 @@
 #include <signal.h> 
 #include "servidor_ftp.h"
 
-// Variables globals que coincideixen amb l'extern del .cpp
 ControlClient llista_clients[MAX_CLIENTS];
-pthread_mutex_t semafor_taula_clients = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t semafor_t_clients = PTHREAD_MUTEX_INITIALIZER;
 int socket_escolta;
 volatile int running = 1;
 
@@ -57,15 +56,13 @@ int main() {
             break;
         }
 
-        pthread_mutex_lock(&semafor_taula_clients);
-        // Nom de funció corregit segons el .h
+        pthread_mutex_lock(&semafor_t_clients);
         int posicio = buscar_posicio_lliure(llista_clients, MAX_CLIENTS);
 
         if (posicio >= 0) {
             llista_clients[posicio].esta_ocupat = 1;
-            llista_clients[posicio].socket_comunicacio = socket_client_nou;
+            llista_clients[posicio].socket_cli = socket_client_nou;
 
-            // Nom de la funció del fil corregit segons el .h
             pthread_create(&llista_clients[posicio].fil_id, NULL, fil_gestio_client, &llista_clients[posicio]);
             pthread_detach(llista_clients[posicio].fil_id);
         }
@@ -73,7 +70,7 @@ int main() {
             printf("[ALERTA] Servidor ple. Rebutjant connexió.\n");
             close(socket_client_nou);
         }
-        pthread_mutex_unlock(&semafor_taula_clients);
+        pthread_mutex_unlock(&semafor_t_clients);
     }
 
     printf("[FI] Servidor aturat correctament.\n");
