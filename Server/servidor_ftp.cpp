@@ -68,7 +68,6 @@ void* fil_gestio_client(void* argument_client) {
 			case OP_LS: dir_servidor(client); break;
 			case OP_CD: cd_path(client); break;
 			case OP_DOWNLOAD: download_file(client); break;
-
 			}
 
 		}
@@ -188,16 +187,19 @@ void rget_directory(ControlClient* client)
 /// <param name="password"></param>
 void registrar_usuari(char* username, char* password)
 {
+	// find ~ -name "usuaris.txt"
 	int fd_fitxer = open("usuaris.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if (fd_fitxer == -1) {
 		perror("Error al fitxer d'usuaris");
 		return;
 	}
-	write(fd_fitxer, username, strlen(username));
-	write(fd_fitxer, ":", 1);
-	xifrar_password(password);
-	write(fd_fitxer, password, strlen(password));
-	write(fd_fitxer, "\n", 1);
+	unsigned long hash_password = xifrar_password(password);
+
+	// utilitzem dprintf per escriure directament al fd
+	if (dprintf(fd_fitxer, "%s:%lu\n", username, hash_password) < 0) {
+		perror("Error escrivint al fitxer");
+	}
+
 	close(fd_fitxer);
-	printf("[INFO] Nou usuari registrat: %s\n", username);
+	printf("[INFO] Nou usuari registrat: %s amb hash: %lu\n", username, hash_password);
 }

@@ -21,9 +21,9 @@ void handle_sigint(int sig) {
 }
 
 int main() {
-	registrar_usuari("usuari1", "contrasenya1");
-	registrar_usuari("sara", "prats");
-	registrar_usuari("alumne", "alumne");
+	//registrar_usuari("usuari1", "contrasenya1");
+	//registrar_usuari("sara", "prats");
+	//registrar_usuari("alumne", "alumne");
 	struct sockaddr_in config_servidor, dades_client;
 	socklen_t mida_dades_client;
 
