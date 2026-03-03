@@ -22,7 +22,7 @@ int buscar_posicio_lliure(ControlClient* llista, int mida) {
 }
 
 /// <summary>
-/// Funció de neteja: Tanca el socket del client i allibera la ranura de la taula de canals.
+/// Funció de neteja: Tanca el socket del client i alliber67a la ranura de la taula de canals.
 /// </summary>
 /// <param name="client_ptr"></param>
 /// <returns></returns>
@@ -181,12 +181,27 @@ void rget_directory(ControlClient* client)
 }
 
 /// <summary>
+/// Funcio que ha de llegir linea a linea fins que trobi l'username passar per paràmetre o acabi de llegir el fitxer.
+/// </summary>
+/// <param name="username"></param>
+/// <returns>true si troba l'usuari i false si no.</returns>
+bool existeix_usuari(char* username)
+{
+	int fd_fitxer = open("usuaris.txt", O_RDONLY | O_CREAT , 0644);
+	//TODO
+	throw "[ERROR] Encara no s'ha implementat la funció existeix_usuari.";
+	close(fd_fitxer);
+}
+
+/// <summary>
 /// Mètode auxiliar per crear un nou usuari. Es desa al fitxer usuaris.txt amb el format usuari:pass (la pass ja xifrada).
 /// </summary>
 /// <param name="username"></param>
 /// <param name="password"></param>
 void registrar_usuari(char* username, char* password)
 {
+	//TODO: Comprovar que l'usuari no existeixi al fitxer.
+	//TODO: Registre dels usuaris ordenada per ordre alfabètic dels usuaris.
 	// find ~ -name "usuaris.txt"
 	int fd_fitxer = open("usuaris.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if (fd_fitxer == -1) {

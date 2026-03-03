@@ -4,8 +4,10 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
+#include "../Server/definicions.h"
 
 #define PORT 10235
+
 
 typedef struct {
     int operacio;

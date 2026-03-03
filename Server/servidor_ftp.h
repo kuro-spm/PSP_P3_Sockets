@@ -1,6 +1,7 @@
 #pragma once
 #include <pthread.h>
 #include <netinet/in.h>
+#include "definicions.h"
 
 
 #define PORT_SERVEI 10235
@@ -29,12 +30,6 @@ typedef struct {
     char ip_client[INET_ADDRSTRLEN];
 } ControlClient;
 
-// Definició de codis d'operació
-enum CodisOperacio {
-    OP_LS = 1,
-    OP_CD = 2,
-    OP_DOWNLOAD = 3
-};
 
 
 // ==================Funcions de gestió del servidor==================
@@ -63,4 +58,5 @@ void dir_servidor(ControlClient *client);
 void cd_path(ControlClient* client);
 void download_file(ControlClient* client);
 void rget_directory(ControlClient* client);
+bool existeix_usuari(char* username);
 void registrar_usuari(char* username, char* password);
