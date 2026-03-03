@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <netinet/in.h>
 
+
 #define PORT_SERVEI 10235
 #define MAX_CLIENTS 8
 #define MAX_BUFFER 1024 
@@ -25,6 +26,7 @@ typedef struct {
     pthread_t fil_id;
     int esta_ocupat;
     char path_actual[1024];
+    char ip_client[INET_ADDRSTRLEN];
 } ControlClient;
 
 // Definició de codis d'operació
@@ -50,7 +52,9 @@ int validar_usuari(char* usr, char* pwd);
 /// <param name="argument_client"></param>
 /// <returns></returns>
 void* fil_gestio_client(void* argument_client);
-void xifrar_password(char* password);
+unsigned long xifrar_password(char* password);
+int ip_ja_connectada(ControlClient* llista, int mida, char* nova_ip);
+
 
 
 //==================Funcions de funcionalitats del servidor==================
@@ -59,3 +63,4 @@ void dir_servidor(ControlClient *client);
 void cd_path(ControlClient* client);
 void download_file(ControlClient* client);
 void rget_directory(ControlClient* client);
+void registrar_usuari(char* username, char* password);

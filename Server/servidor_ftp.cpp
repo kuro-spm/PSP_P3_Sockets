@@ -1,8 +1,9 @@
 #include "servidor_ftp.h"
 #include <stdio.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <string.h>
+#include <fcntl.h>
+
 
 // Fem referència al semàfor global definit al main.cpp
 extern pthread_mutex_t semafor_t_clients;
@@ -75,6 +76,18 @@ void* fil_gestio_client(void* argument_client) {
 	return finalitzar_connexio_client(client);
 }
 
+unsigned long xifrar_password(char* pwd)
+{
+	unsigned long hash = 5381;
+	int c;
+
+	while ((c = *pwd++)) {
+		// hash * 33 + c
+		hash = ((hash << 5) + hash) + c;
+	}
+	return hash;
+}
+
 /// <summary>
 /// Valida si l'usuari i la contrasenya es troben al fitxer usuaris.txt. 
 /// </summary>
@@ -85,26 +98,35 @@ int validar_usuari(char* usr, char* pwd) {
 	FILE* fitxer = fopen("usuaris.txt", "r");
 	if (fitxer == NULL) return 0; // Error o fitxer no existeix
 
-	char linia[100];
-	char u_fitxer[20], p_fitxer[100];
+	char linia[128];
+	char usr_fitxer[20];
+	unsigned long pwd_fitxer;
 	int trobat = 0;
 
 	// Xifrem la contrasenya rebuda per comparar-la amb la del fitxer
-	xifrar_password(pwd);
+	unsigned long hash_pwd = xifrar_password(pwd);
 
 	while (fgets(linia, sizeof(linia), fitxer)) {
 		// Separem usuari i password de la línia (format usuari:pass)
-		sscanf(linia, "%[^:]:%s", u_fitxer, p_fitxer);
-					
-		if (strcmp(usr, u_fitxer) == 0 && strcmp(pwd, p_fitxer) == 0) {
-			trobat = 1;
-			break;
+		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
+			if (strcmp(usr, usr_fitxer) == 0 && hash_pwd == pwd_fitxer) {
+				trobat = 1;
+				break;
+			}
 		}
 	}
 	fclose(fitxer);
 	return trobat;
 }
 
+int ip_ja_connectada(ControlClient* llista, int mida, char* nova_ip) {
+	for (int i = 0; i < mida; i++) {
+		if (llista[i].esta_ocupat && strcmp(llista[i].ip_client, nova_ip) == 0) {
+			return 1; // IP trobada, ja està connectat
+		}
+	}
+	return 0; // IP lliure
+}
 
 
 //=========================Funcions del servidor=========================
@@ -157,4 +179,25 @@ void download_file(ControlClient* client)
 void rget_directory(ControlClient* client)
 {
 	//Farem servir TARGZ de la carpeta. El client ho desempaquetarà i crearà l'arbre automàticament.
+}
+
+/// <summary>
+/// Mètode auxiliar per crear un nou usuari. Es desa al fitxer usuaris.txt amb el format usuari:pass (la pass ja xifrada).
+/// </summary>
+/// <param name="username"></param>
+/// <param name="password"></param>
+void registrar_usuari(char* username, char* password)
+{
+	int fd_fitxer = open("usuaris.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd_fitxer == -1) {
+		perror("Error al fitxer d'usuaris");
+		return;
+	}
+	write(fd_fitxer, username, strlen(username));
+	write(fd_fitxer, ":", 1);
+	xifrar_password(password);
+	write(fd_fitxer, password, strlen(password));
+	write(fd_fitxer, "\n", 1);
+	close(fd_fitxer);
+	printf("[INFO] Nou usuari registrat: %s\n", username);
 }
