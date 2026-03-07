@@ -6,7 +6,7 @@
 
 
 // Fem referència al semàfor global definit al main.cpp
-extern pthread_mutex_t semafor_t_clients;
+extern pthread_mutex_t mut_t_clients;
 
 void inicialitzar_taula_clients(ControlClient* llista, int mida) {
 	for (int i = 0; i < mida; i++) {
@@ -30,62 +30,13 @@ void* finalitzar_connexio_client(ControlClient* client_ptr) {
 	printf("[INFO] Tancant socket %d\n", client_ptr->socket_cli);
 	close(client_ptr->socket_cli);
 
-	pthread_mutex_lock(&semafor_t_clients);
+	pthread_mutex_lock(&mut_t_clients);
 	client_ptr->esta_ocupat = 0;
-	pthread_mutex_unlock(&semafor_t_clients);
+	pthread_mutex_unlock(&mut_t_clients);
 
 	return NULL;
 }
 
-
-
-void* fil_gestio_client(void* argument_client) {
-	ControlClient* client = (ControlClient*)argument_client;
-	MissatgeHeader header;
-	int resposta_validacio = 0; // 0: KO, 1: OK
-	int resultat_login = 0; // 0: KO, 1: OK
-
-	if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
-		// 1. Validar usuari/pass amb xifrar_password
-		if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
-			// Validem les credencials que venen al header i que la operació sigui vàlida:
-			if (validar_usuari(header.usuari, header.contrasenya) != 0 &&
-				header.operacio >= 1 && header.operacio <= 3) {
-
-				resposta_validacio = 1; // Tot és correcte
-			}
-
-		}
-		// Informem al client del resultat de la validació
-		write(client->socket_cli, &resposta_validacio, sizeof(int));
-
-		if (resposta_validacio == 1) {
-			// 2. Switch segons header.operacio:
-			switch (header.operacio) {
-				/*	OP_LS = 1,
-					OP_CD = 2,
-					OP_DOWNLOAD = 3 */
-			case OP_LS: dir_servidor(client); break;
-			case OP_CD: cd_path(client); break;
-			case OP_DOWNLOAD: download_file(client); break;
-			}
-
-		}
-	}
-	return finalitzar_connexio_client(client);
-}
-
-unsigned long xifrar_password(char* pwd)
-{
-	unsigned long hash = 5381;
-	int c;
-
-	while ((c = *pwd++)) {
-		// hash * 33 + c
-		hash = ((hash << 5) + hash) + c;
-	}
-	return hash;
-}
 
 /// <summary>
 /// Valida si l'usuari i la contrasenya es troben al fitxer usuaris.txt. 
@@ -117,6 +68,59 @@ int validar_usuari(char* usr, char* pwd) {
 	fclose(fitxer);
 	return trobat;
 }
+
+
+/// <summary>
+/// Funció principal de gestió del client. 
+/// S'encarrega de validar les credencials i processar les operacions que el client demani segons el protocol establert.
+/// </summary>
+/// <param name="argument_client"></param>
+/// <returns></returns>
+void* fil_gestio_client(void* argument_client) {
+	ControlClient* client = (ControlClient*)argument_client;
+	MissatgeHeader header;
+	int resposta_validacio = 0; // 0: KO, 1: OK
+	int resultat_login = 0; // 0: KO, 1: OK
+
+	if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
+		// 1. Validar usuari/pass amb xifrar_password
+		if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
+			// Validem les credencials que venen al header i que la operació sigui vàlida:
+			if (validar_usuari(header.usuari, header.contrasenya) != 0 &&
+				header.operacio >= 1 && header.operacio <= 3) {
+
+				resposta_validacio = 1; // Tot és correcte
+			}
+
+		}
+		// Informem al client del resultat de la validació
+		write(client->socket_cli, &resposta_validacio, sizeof(int));
+
+		if (resposta_validacio == 1) {
+			// 2. Switch segons header.operacio:
+			switch (header.operacio) {
+			case OP_LS: dir_servidor(client); break;
+			case OP_CD: cd_path(client); break;
+			case OP_DOWNLOAD: download_file(client); break;
+			}
+
+		}
+	}
+	return finalitzar_connexio_client(client);
+}
+
+unsigned long xifrar_password(char* pwd)
+{
+	unsigned long hash = 5381;
+	int c;
+
+	while ((c = *pwd++)) {
+		// hash * 33 + c
+		hash = ((hash << 5) + hash) + c;
+	}
+	return hash;
+}
+
 
 int ip_ja_connectada(ControlClient* llista, int mida, char* nova_ip) {
 	for (int i = 0; i < mida; i++) {
@@ -187,7 +191,7 @@ void rget_directory(ControlClient* client)
 /// <returns>true si troba l'usuari i false si no.</returns>
 bool existeix_usuari(char* username)
 {
-	int fd_fitxer = open("usuaris.txt", O_RDONLY | O_CREAT , 0644);
+	int fd_fitxer = open("usuaris.txt", O_RDONLY | O_CREAT, 0644);
 	//TODO
 	throw "[ERROR] Encara no s'ha implementat la funció existeix_usuari.";
 	close(fd_fitxer);

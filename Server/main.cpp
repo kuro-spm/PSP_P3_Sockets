@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 ControlClient llista_clients[MAX_CLIENTS];
-pthread_mutex_t semafor_t_clients = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mut_t_clients = PTHREAD_MUTEX_INITIALIZER;
 int socket_escolta;
 volatile int running = 1;
 
@@ -62,7 +62,7 @@ int main() {
 		char ip_client[INET_ADDRSTRLEN];
 		inet_ntop(AF_INET, &dades_client.sin_addr, ip_client, sizeof(ip_client));
 
-		pthread_mutex_lock(&semafor_t_clients);
+		pthread_mutex_lock(&mut_t_clients);
 
 		//Validar ip:
 		if (ip_ja_connectada(llista_clients, MAX_CLIENTS, ip_client)) {
@@ -88,7 +88,7 @@ int main() {
 				close(socket_client_nou);
 			}
 		}
-		pthread_mutex_unlock(&semafor_t_clients);
+		pthread_mutex_unlock(&mut_t_clients);
 	}
 
 	printf("[FI] Servidor aturat correctament.\n");

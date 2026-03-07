@@ -3,6 +3,10 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="ClassServer/ClassServer.vcxproj" Id="cd317de5-d5cc-4aff-9455-3134f87691c8">
+    <Platform Solution="*|x86" Project="x86" />
+    <Deploy />
+  </Project>
   <Project Path="ClientLinux/ClientLinux.vcxproj" Id="9c0ae12b-1597-4428-b72b-8886097894fb">
     <Platform Solution="*|x86" Project="x86" />
     <Deploy />
