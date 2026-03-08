@@ -4,18 +4,25 @@
 *.userosscache
 *.sln.docstates
 *.suo
+*.db
+*.opendb
+*.sdf
+*.ipch/
 
 ## --- Carpetes de sortida de compilació (Windows/MSVC) ---
 Debug/
 Release/
 x64/
 x86/
+[Aa]rm/
+[Aa]rm64/
 
 ## --- Carpetes de sortida de compilació (Linux/WSL) ---
-# Visual Studio crea una carpeta oculta a l'arrel per als binaris de Linux
 bin/
 obj/
 out/
+*.recipe
+iconfig.json
 
 ## --- Fitxers temporals de compilació ---
 *.obj
@@ -23,14 +30,19 @@ out/
 *.ilk
 *.aps
 *.ncb
-*.opendb
-*.sdf
 *.cache
 *.log
 *.tlog
 *.lastbuildstate
+*.unsuccessfulbuild
+v14*.idb
+v14*.pdb
 
 ## --- Fitxers de diagnòstic i subproductes de GCC ---
 *.o
 *.out
 *.gch
+
+## --- Dades de l'aplicació ---
+# Ignorar la base de dades d'usuaris local
+usuaris.txt
