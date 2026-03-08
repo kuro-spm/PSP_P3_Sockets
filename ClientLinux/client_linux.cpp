@@ -27,6 +27,14 @@ void demanar_usuari_pwd(MissatgeHeader* header) {
 	scanf("%s", header->contrasenya);
 }
 
+//TODO: Revisar three way handshake i validació de l'usuari abans d'enviar les dades de l'operació al servidor. 
+//En una implementació completa, després de connectar-se al servidor, 
+// el client hauria d'enviar un missatge de validació amb l'usuari i contrasenya, 
+// i esperar la resposta del servidor abans de demanar l'operació a realitzar. 
+// Si la validació és correcta, llavors es demana l'operació i s'envia al servidor. Si no, es tanca la connexió.
+
+//TODO: Revisar la implementació de quantes dades ha de llegir el client després d'enviar l'operació al servidor.
+
 int main() {
 	int socket_server;
 	struct sockaddr_in server;
@@ -125,7 +133,7 @@ int main() {
 		default:
 			printf("Operació no reconeguda.\n");
 		}
-		//Revisar:
+		//Revisar on cal realment llegir dades i amb quina mida després d'enviar l'operació al servidor. En una implementació completa, el client hauria de llegir la resposta del servidor després de cada operació per mostrar el resultat o els errors que puguin ocórrer.
 		read(socket_server, &buffer, LEN_BUFFER);
 		printf("Resultat del servidor: %s\n", buffer);
 	}
