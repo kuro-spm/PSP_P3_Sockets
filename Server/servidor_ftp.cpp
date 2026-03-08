@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
-
+#include <arpa/inet.h> // Afegit per a inet_ntop i similars
 
 // Fem referència al semàfor global definit al main.cpp
 extern pthread_mutex_t mut_t_clients;
@@ -70,40 +70,24 @@ int validar_usuari(char* usr, char* pwd) {
 }
 
 
-/// <summary>
-/// Funció principal de gestió del client. 
-/// S'encarrega de validar les credencials i processar les operacions que el client demani segons el protocol establert.
-/// </summary>
-/// <param name="argument_client"></param>
-/// <returns></returns>
 void* fil_gestio_client(void* argument_client) {
 	ControlClient* client = (ControlClient*)argument_client;
-	MissatgeHeader header;
-	int resposta_validacio = 0; // 0: KO, 1: OK
-	int resultat_login = 0; // 0: KO, 1: OK
+	MissatgeHeader header; 
+	int resposta_validacio = 0;
 
 	if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
-		// 1. Validar usuari/pass amb xifrar_password
-		if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
-			// Validem les credencials que venen al header i que la operació sigui vàlida:
-			if (validar_usuari(header.usuari, header.contrasenya) != 0 &&
-				header.operacio >= 1 && header.operacio <= 3) {
-
-				resposta_validacio = 1; // Tot és correcte
-			}
-
+		if (validar_usuari(header.usuari, header.contrasenya) != 0 &&
+			header.operacio >= 1 && header.operacio <= 5) {
+			resposta_validacio = 1;
 		}
-		// Informem al client del resultat de la validació
 		write(client->socket_cli, &resposta_validacio, sizeof(int));
-
 		if (resposta_validacio == 1) {
-			// 2. Switch segons header.operacio:
 			switch (header.operacio) {
 			case OP_LS: dir_servidor(client); break;
 			case OP_CD: cd_path(client); break;
 			case OP_DOWNLOAD: download_file(client); break;
+			case OP_REGISTRE: registrar_usuari(header.usuari, header.contrasenya); break;
 			}
-
 		}
 	}
 	return finalitzar_connexio_client(client);

@@ -20,7 +20,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Server\definicions.h">
+    <ClInclude Include="..\ClassServer\Dades.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>

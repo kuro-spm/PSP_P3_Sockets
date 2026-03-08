@@ -80,7 +80,7 @@
     <ClCompile Include="servidor_ftp.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="definicions.h" />
+    <ClInclude Include="..\ClassServer\Dades.h" />
     <ClInclude Include="servidor_ftp.h" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

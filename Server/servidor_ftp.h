@@ -1,7 +1,8 @@
 #pragma once
 #include <pthread.h>
 #include <netinet/in.h>
-#include "definicions.h"
+#include <stdbool.h>
+#include "../ClassServer/Dades.h"
 
 #define MAX_CLIENTS 8
 #define MAX_BUFFER 1024 

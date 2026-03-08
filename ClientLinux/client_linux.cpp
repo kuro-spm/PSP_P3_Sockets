@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
-#include "../Server/definicions.h"
 #include "../ClassServer/Dades.h"
 
 int demanar_operacio() {
@@ -20,11 +19,21 @@ int demanar_operacio() {
 	return op;
 }
 
+void demanar_usuari_pwd(MissatgeHeader* header) {
+	//Demanar usuari i contrasenya
+	printf("Usuari: ");
+	scanf("%s", header->usuari);
+	printf("Contrasenya: ");
+	scanf("%s", header->contrasenya);
+}
+
 int main() {
 	int socket_server;
 	struct sockaddr_in server;
 	MissatgeHeader header;
-	int validacio, resultat;
+	int validacio;
+	char buffer[LEN_BUFFER];
+	char buffer_rebut[LEN_BUFFER*4];
 
 	socket_server = socket(AF_INET, SOCK_STREAM, 0);
 	server.sin_family = AF_INET;
@@ -37,56 +46,91 @@ int main() {
 		return 1;
 	}
 
+	//Omplir el header amb les dades de l'usuari i contrasenya, i demanar l'operació a realitzar
 	int op = demanar_operacio();
-	//Todo: Demanar usuari i contrasenya
-	//Todo: Omplir el header amb les dades de l'usuari i contrasenya
-	//TODO: Omplir el header amb les dades necessaries per a fer l'operacio?
+	demanar_usuari_pwd(&header);
 
 	header.operacio = op;
 	header.versio = 1;
-	header.len = 2; // Enviem 2 enters
-
+	header.len = LEN_BUFFER;
+	
+	//TODO: Omplir el header amb les dades necessaries per a fer l'operacio?
+	switch(op) {
+		case OP_LS:
+			header.len = 0; // No enviem dades addicionals
+			break;
+		case OP_CD:
+			// El nou path es demanarà després de validar l'usuari
+			break;
+		case OP_DOWNLOAD:
+			// El nom del fitxer es demanarà després de validar l'usuari
+			break;
+		case OP_REGISTRE:
+			// Encarra no s'ha implementat el registre, així que no calen dades addicionals
+			break;
+		case OP_SORTIR:
+			// No calen dades addicionals per a sortir
+			header.len = 0;
+			break;
+		default:
+			printf("Operació no reconeguda.\n");
+			close(socket_server);
+			return 1;
+	}
+	
+	// Enviem el header al servidor
 	write(socket_server, &header, sizeof(MissatgeHeader));
+	// Esperar la validació del servidor
 	read(socket_server, &validacio, sizeof(int));
 
 	if (validacio == VALID) {
 		switch (op) {
 		case OP_LS:
 			printf("Operació LS seleccionada.\n");
+			int n;
+			printf("--- LLISTAT DEL SERVIDOR ---\n");
+			// Llegim mentre el servidor ens enviï dades
+			while ((n = read(socket_server, buffer_rebut, sizeof(buffer_rebut) - 1)) > 0) {
+				buffer_rebut[n] = '\0';
+				printf("%s", buffer_rebut);
+				// Si el servidor envia un caràcter buit, hem acabat
+				if (buffer_rebut[n - 1] == '\0') break;
+			}
 			break;
 		case OP_CD:
 			printf("Operació CD seleccionada.\n");
 			//Demanar el nou path al usuari i enviar-lo al servidor
-			char nou_path[256];
+			char nou_path[LEN_BUFFER];
 			printf("Introdueix el nou path: ");
 			scanf("%s", nou_path);
-			write(socket_server, &nou_path, sizeof(int));
+			write(socket_server, &nou_path, LEN_BUFFER);
 			break;
 		case OP_DOWNLOAD:
 			printf("Operació DOWNLOAD seleccionada.\n");
 			//Demanar el nom del fitxer a descarregar i enviar-lo al servidor
-			char nom_fitxer[256];
+			char nom_fitxer[LEN_BUFFER];
 			printf("Introdueix el nom del fitxer a descarregar: ");
 			scanf("%s", nom_fitxer);
-			write(socket_server, &nom_fitxer, sizeof(int));
+			write(socket_server, &nom_fitxer, LEN_BUFFER);
 			break;
 		case OP_REGISTRE:
 			printf("Operació REGISTRE seleccionada.\n");
 			//Encarra no s'ha implementat
 			//el registre al servidor, així que només imprimim un missatge.En una implementació completa, aquí es demanaria el nom d'usuari i la contrasenya, es construiria el header amb aquesta informació i s'enviaria al servidor per al registre.
-
+			printf("Funcionalitat de registre no implementada.\n");
 			break;
 		case OP_SORTIR:
 			printf("Operació SORTIR seleccionada.\n");
 			break;
+		default:
+			printf("Operació no reconeguda.\n");
 		}
-
-		//TODO: Canviar el que ha de llegir el client. Ara només llegim un enter, però depenent de l'operació pot ser que el servidor enviï més dades (com el resultat d'un ls, o el contingut d'un fitxer). Hauríem de llegir aquestes dades i mostrar-les al usuari.
-		read(socket_server, &resultat, sizeof(int));
-		printf("Resultat del servidor: %d\n", resultat);
+		//Revisar:
+		read(socket_server, &buffer, LEN_BUFFER);
+		printf("Resultat del servidor: %s\n", buffer);
 	}
 	else {
-		printf("Operació no permesa.\n");
+		printf("No s'ha pogut validar.\n");
 	}
 
 	close(socket_server);

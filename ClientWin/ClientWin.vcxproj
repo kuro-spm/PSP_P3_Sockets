@@ -130,7 +130,7 @@
     <ClCompile Include="client_windows.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Server\definicions.h" />
+    <ClInclude Include="..\ClassServer\Dades.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -1,4 +1,4 @@
-#include "../Server/definicions.h"
+#include "../ClassServer/Dades.h"
 
 #include <iostream>
 

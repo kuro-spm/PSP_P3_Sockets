@@ -5,6 +5,7 @@
 #define SOCKET_ATURAT -1
 #define VALID 1
 #define NO_VALID 0
+#define LEN_BUFFER 256
 
 // Definició de codis d'operació
 enum CodisOperacio {
