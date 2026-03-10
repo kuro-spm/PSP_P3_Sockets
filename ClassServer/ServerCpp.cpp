@@ -2,21 +2,15 @@
 
 #include "ServerCpp.h"
 
-// Llibreries estàndard de C per a sockets i fitxers
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-
-// Llibreries per a directoris i fitxers (POSIX)
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h> 
 #include <arpa/inet.h>
-
-// No necessites <vector>, <algorithm>, <fstream> ni <filesystem> 
-// si estàs treballant amb la API de C (FILE*, open, read, write).
 
 ServerCpp::ServerCpp()
 {
@@ -132,28 +126,37 @@ void* ServerCpp::gestio_client(void* arg) {
 
 	int socket = cclient->getSocketCli();
 	ConnectionHeader header;
-	int resposta_validacio = NO_VALID;
+	bool continuar = true;
 
-	// Llegim el header (Lectura 1 segons el protocol binari)
-	if (read(socket, &header, sizeof(ConnectionHeader)) > 0) {
-		if (servidor->validar_usuari(header.usuari, header.contrasenya)) {
-			resposta_validacio = VALID;
-			cclient->setUsuari(header.usuari);
-		}
-		write(socket, &resposta_validacio, sizeof(int));
+	// Primer pas: Autenticació (fora del bucle principal)
+	if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) {
+		cclient->tancarConnexio();
+		return NULL;
+	}
 
-		if (resposta_validacio == VALID) {
-			printf("[LOG] Usuari %s autenticat.\n", header.usuari);
+	int resposta = servidor->validar_usuari(header.usuari, header.contrasenya) ? VALID : NO_VALID;
+	write(socket, &resposta, sizeof(int));
+
+	if (resposta == VALID) {
+		cclient->setUsuari(header.usuari);
+
+		// Bucle d'interacció: Mantenim el fil viu
+		while (continuar && servidor->running) {
+			// Llegim la següent operació del client
+			if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) break;
+
 			switch (header.operacio) {
-			case OP_LS: servidor->dir_servidor(cclient); break;
-			case OP_CD: servidor->cd_path(cclient); break;
+			case OP_LS:       servidor->dir_servidor(cclient); break;
+			case OP_CD:       servidor->cd_path(cclient); break;
 			case OP_DOWNLOAD: servidor->download_file(cclient); break;
-			case OP_SORTIR: break;
-			default: printf("[ERROR] Operació %d no suportada.\n", header.operacio); break;
+			case OP_SORTIR:
+				continuar = false;
+				printf("[LOG] Usuari %s s'ha desconnectat.\n", cclient->getUsuari());
+				break;
+			default: break;
 			}
 		}
 	}
-	printf("[INFO] Tancant connexió del client %d\n", socket);
 	cclient->tancarConnexio();
 	return NULL;
 }
@@ -212,22 +215,18 @@ int ServerCpp::dir_servidor(ConnexioClient* client)
 
 	// 1. Definim el nom del fitxer temporal basat en el socket del client
 	snprintf(nom_fitxer, sizeof(nom_fitxer), "ls_client%d.txt", client->getSocketCli());
-
 	// 2. Executem la comanda del sistema per crear el fitxer
 	snprintf(comanda, sizeof(comanda), "ls -l %s > %s", client->getPathActual(), nom_fitxer);
 	if (system(comanda) != 0) {
 		perror("Error executant ls");
 		return -1;
 	}
-
 	// 3. Obrim el fitxer que acaba de crear "system" per lectura
-	// Fem servir 'open' (retorna un int) en lloc de ifstream
 	fd_txt = open(nom_fitxer, O_RDONLY);
 	if (fd_txt < 0) {
 		perror("Error al obrir el fitxer temporal");
-		return -1;
+		return -2;
 	}
-
 	// 4. Llegim del fitxer i escrivim directament al socket del client
 	// Fem un bucle: mentres puguem llegir del fitxer, enviem al socket
 	while ((bytes_llegits = read(fd_txt, buffer, sizeof(buffer))) > 0) {
@@ -237,7 +236,6 @@ int ServerCpp::dir_servidor(ConnexioClient* client)
 			break;
 		}
 	}
-
 	// 5. Netegem: tanquem el fitxer i l'esborrem del disc
 	close(fd_txt);
 	remove(nom_fitxer);
