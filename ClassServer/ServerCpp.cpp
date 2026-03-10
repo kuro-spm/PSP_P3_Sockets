@@ -1,7 +1,22 @@
+#pragma once
+
 #include "ServerCpp.h"
-#include <vector>
-#include <algorithm>
-#include <fstream>
+
+// Llibreries estàndard de C per a sockets i fitxers
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// Llibreries per a directoris i fitxers (POSIX)
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h> 
+#include <arpa/inet.h>
+
+// No necessites <vector>, <algorithm>, <fstream> ni <filesystem> 
+// si estàs treballant amb la API de C (FILE*, open, read, write).
 
 ServerCpp::ServerCpp()
 {
@@ -39,6 +54,8 @@ void ServerCpp::inicialitzar()
 }
 
 void ServerCpp::runServer() {
+	char ip_str[INET_ADDRSTRLEN];
+
 	if (bind(socket_escolta, (struct sockaddr*)&config_servidor, sizeof(config_servidor)) < 0) {
 		perror("Error al BIND");
 		return;
@@ -64,10 +81,15 @@ void ServerCpp::runServer() {
 		int posicio = buscarPosicioLliure();
 
 		if (posicio != -1) {
-			char ip_str[INET_ADDRSTRLEN];
 			inet_ntop(AF_INET, &(adreça_client.sin_addr), ip_str, INET_ADDRSTRLEN);
 
 			printf("[INFO] Nova connexió des de %s (Socket %d)\n", ip_str, socket_nou);
+
+			if (ip_ja_connectada(ip_str)) {
+				printf("[WARNING] IP %s ja connectada. Rebutjant.\n", ip_str);
+				close(socket_nou);
+				continue; // Salta al següent accept
+			}
 
 			// Inicialitzem l'objecte client de la posició trobada
 			clients[posicio].inicialitzar(socket_nou, ip_str);
@@ -100,6 +122,8 @@ void ServerCpp::stopServer()
 	}
 }
 
+
+
 void* ServerCpp::gestio_client(void* arg) {
 	ThreadArgs* args = (ThreadArgs*)arg;
 	ServerCpp* servidor = args->servidor;
@@ -107,16 +131,15 @@ void* ServerCpp::gestio_client(void* arg) {
 	delete args;
 
 	int socket = cclient->getSocketCli();
-	MissatgeHeader header;
+	ConnectionHeader header;
 	int resposta_validacio = NO_VALID;
 
 	// Llegim el header (Lectura 1 segons el protocol binari)
-	if (read(socket, &header, sizeof(MissatgeHeader)) > 0) {
+	if (read(socket, &header, sizeof(ConnectionHeader)) > 0) {
 		if (servidor->validar_usuari(header.usuari, header.contrasenya)) {
 			resposta_validacio = VALID;
 			cclient->setUsuari(header.usuari);
 		}
-
 		write(socket, &resposta_validacio, sizeof(int));
 
 		if (resposta_validacio == VALID) {
@@ -132,117 +155,12 @@ void* ServerCpp::gestio_client(void* arg) {
 	}
 	printf("[INFO] Tancant connexió del client %d\n", socket);
 	cclient->tancarConnexio();
-	return NULL; 
+	return NULL;
 }
 
 void ServerCpp::finalitzar_connexio_client(ConnexioClient* client)
 {
 	client->tancarConnexio();
-}
-
-void ServerCpp::dir_servidor(ConnexioClient* client)
-{
-	//Llistarà els arxius del directori actual del client.
-	// El resultat del ls/dir s'ha de convertir en un arxiu de text temporal amb un identificador del client, el qual s'enviarà al client.
-}
-
-void ServerCpp::cd_path(ConnexioClient* client) {
-	char nou_path[256];
-	// Llegim el path des del socket del client
-	if (read(client->getSocketCli(), nou_path, sizeof(nou_path)) > 0) {
-		// çcomprovar si el path existeix amb opendir()
-		DIR* dir = opendir(nou_path);
-		if (dir == NULL) {
-			perror("Error al canviar de directori");
-			return;
-		}
-		client->setPathActual(nou_path);
-		printf("[INFO:CD] Client %d canviat a: %s\n", client->getSocketCli(), client->getPathActual());
-	}
-}
-
-void ServerCpp::download_file(ConnexioClient* client)
-{
-	// Descarrega un fitxer a la màquina del client amb el mateix nom que té en el servidor.
-
-}
-
-void ServerCpp::rget_directory(ConnexioClient* client)
-{
-	// Descarrega tota la carpeta nom_directori amb tot el seu contingut recursivament. 
-	// Es construeix un arbre en el client amb els mateixos arxius que en el servidor. 
-	// L'arrel de la estructura en el client serà nom_directori.
-	//Farem servir TARGZ de la carpeta. El client ho desempaquetarà i crearà l'arbre automàticament.
-
-}
-
-
-/// <summary>
-/// Calcula un valor hash de la contraseña usando una variante del algoritmo DJB2. No es un método criptográfico seguro para almacenar contraseñas.
-/// </summary>
-/// <param name="password">La contraseña a convertir en hash (pasada como referencia constante a std::string).</param>
-/// <returns>Un valor de tipo unsigned long que representa el hash calculado de la contraseña.</returns>
-unsigned long ServerCpp::xifrar_password(const std::string& password) {
-	unsigned long hash = 5381;
-	for (char c : password) {
-		hash = ((hash << 5) + hash) + (unsigned char)c;
-	}
-	return hash;
-}
-
-/// <summary>
-/// Comprueba si un usuario existe en el archivo 'usuaris.txt'.
-/// </summary>
-/// <param name="username">Nombre de usuario a buscar. La comparación es exactamente igual (sensible a mayúsculas/minúsculas).</param>
-/// <returns>true si el usuario se encuentra en el archivo; false si no se encuentra o si no se puede abrir el archivo.</returns>
-bool ServerCpp::existeix_usuari(const std::string& username)
-{
-	FILE* fitxer = fopen("usuaris.txt", "r");
-	if (fitxer == NULL) {
-		return false;
-	}
-	char linia[128];
-	char usr_fitxer[20];
-	unsigned long pwd_fitxer;
-	bool trobat = false;
-	while (fgets(linia, sizeof(linia), fitxer)) {
-		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
-			if (username == usr_fitxer) {
-				trobat = true;
-				break;
-			}
-		}
-	}
-	fclose(fitxer);
-	return trobat;
-}
-
-/// <summary>
-/// Registra un nuevo usuario: comprueba si ya existe, cifra la contraseña y la anexa al fichero de usuarios.
-/// </summary>
-/// <param name="username">Nombre de usuario a registrar.</param>
-/// <param name="password">Contraseña en texto plano; se cifra internamente antes de almacenarla.</param>
-void ServerCpp::registrar_usuari(const std::string& username, const std::string& password) {
-	if (existeix_usuari(username)) {
-		printf("[ERROR] L'usuari '%s' ja existeix.\n", username.c_str());
-		return;
-	}
-	pthread_mutex_lock(&semafor_clients);
-
-	FILE* fitxer = fopen("usuaris.txt", "a");
-	if (fitxer == NULL) {
-		perror("Error obrint usuaris.txt");
-		pthread_mutex_unlock(&semafor_clients);
-		return;
-	}
-
-	unsigned long hash_pwd = xifrar_password(password);
-	fprintf(fitxer, "%s:%lu\n", username.c_str(), hash_pwd);
-
-	fclose(fitxer);
-	pthread_mutex_unlock(&semafor_clients);
-
-	printf("[INFO] Usuari registrat correctament: %s\n", username.c_str());
 }
 
 /// <summary>
@@ -266,35 +184,6 @@ bool ServerCpp::ip_ja_connectada(const char* nova_ip) {
 }
 
 /// <summary>
-/// Valida un usuario comprobando el nombre y el hash de la contraseña almacenados en el fichero 'usuaris.txt'.
-/// </summary>
-/// <param name="usr">Nombre de usuario a validar.</param>
-/// <param name="pwd">Contraseña en texto plano; se aplica xifrar_password y se compara el hash con el almacenado.</param>
-/// <returns>true si se encuentra una entrada con el mismo usuario y hash de contraseña; false en caso contrario o si no se puede abrir el fichero.</returns>
-bool ServerCpp::validar_usuari(const std::string& usr, const std::string& pwd) {
-	FILE* fitxer = fopen("usuaris.txt", "r");
-	if (fitxer == NULL) return false;
-
-	char linia[128];
-	char usr_fitxer[20];
-	unsigned long pwd_fitxer;
-	bool trobat = false;
-
-	unsigned long hash_rebut = xifrar_password(pwd);
-
-	while (fgets(linia, sizeof(linia), fitxer)) {
-		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
-			if (usr == usr_fitxer && hash_rebut == pwd_fitxer) {
-				trobat = true;
-				break;
-			}
-		}
-	}
-	fclose(fitxer);
-	return trobat;
-}
-
-/// <summary>
 /// Busca la primera posición libre en la lista de clientes de forma segura para hilos. Bloquea el mutex semafor_clients mientras recorre el array clients y devuelve el índice de la primera entrada no ocupada.
 /// </summary>
 /// <returns>El índice de la primera posición libre (0..MAX_CLIENTS-1). Devuelve -1 si no hay ninguna posición libre.</returns>
@@ -309,3 +198,185 @@ int ServerCpp::buscarPosicioLliure() {
 	pthread_mutex_unlock(&semafor_clients);
 	return -1;
 }
+
+
+/********************** FUNCIONALITATS DEL SERVIDOR **********************/
+
+int ServerCpp::dir_servidor(ConnexioClient* client)
+{
+	char nom_fitxer[LEN_BUFFER];
+	char buffer[LEN_PAQUET];
+	char comanda[LEN_BUFFER + 64];
+	int fd_txt;
+	ssize_t bytes_llegits;
+
+	// 1. Definim el nom del fitxer temporal basat en el socket del client
+	snprintf(nom_fitxer, sizeof(nom_fitxer), "ls_client%d.txt", client->getSocketCli());
+
+	// 2. Executem la comanda del sistema per crear el fitxer
+	snprintf(comanda, sizeof(comanda), "ls -l %s > %s", client->getPathActual(), nom_fitxer);
+	if (system(comanda) != 0) {
+		perror("Error executant ls");
+		return -1;
+	}
+
+	// 3. Obrim el fitxer que acaba de crear "system" per lectura
+	// Fem servir 'open' (retorna un int) en lloc de ifstream
+	fd_txt = open(nom_fitxer, O_RDONLY);
+	if (fd_txt < 0) {
+		perror("Error al obrir el fitxer temporal");
+		return -1;
+	}
+
+	// 4. Llegim del fitxer i escrivim directament al socket del client
+	// Fem un bucle: mentres puguem llegir del fitxer, enviem al socket
+	while ((bytes_llegits = read(fd_txt, buffer, sizeof(buffer))) > 0) {
+		// 'client->getSocketCli()' és el destí, 'buffer' la informació
+		if (write(client->getSocketCli(), buffer, bytes_llegits) < 0) {
+			perror("Error enviant dades al client");
+			break;
+		}
+	}
+
+	// 5. Netegem: tanquem el fitxer i l'esborrem del disc
+	close(fd_txt);
+	remove(nom_fitxer);
+
+	printf("[INFO:LS] Llistat enviat al client %d\n", client->getSocketCli());
+	return 0;
+}
+
+/// <summary>
+/// Lee una ruta enviada por el cliente y, si existe y es un directorio, actualiza la ruta actual asociada al cliente. Asegura la terminación nula de la cadena leída, comprueba la existencia con opendir, cierra el DIR y registra información o errores.
+/// </summary>
+/// <param name="client">Puntero a ConnexioClient que representa la conexión del cliente. Se emplea para leer la nueva ruta desde su socket (mediante getSocketCli()) y para almacenar la ruta actualizada (setPathActual()).</param>
+/// <returns>0 si la ruta se actualizó correctamente; -1 en caso de error (por ejemplo, fallo de lectura o si el directorio no existe).</returns>
+int ServerCpp::cd_path(ConnexioClient* client) {
+	char nou_path[LEN_BUFFER];
+	ssize_t rebut = read(client->getSocketCli(), nou_path, sizeof(nou_path) - 1);
+
+	if (rebut > 0) {
+		nou_path[rebut] = '\0'; // Assegurem que la cadena estigui tancada
+		DIR* dir = opendir(nou_path);
+		if (dir == NULL) {
+			perror("Error al canviar de directori");
+			return -1;
+		}
+		closedir(dir); // IMPORTANT: Tancar el DIR si s'ha obert correctament
+		client->setPathActual(nou_path);
+		printf("[INFO:CD] Client %d canviat a: %s\n", client->getSocketCli(), client->getPathActual());
+		return 0;
+	}
+	return -1; // Retornar error si no s'ha llegit res
+}
+
+int ServerCpp::download_file(ConnexioClient* client)
+{
+	// Descarrega un fitxer a la màquina del client amb el mateix nom que té en el servidor.
+	return 0;
+}
+
+int ServerCpp::rget_directory(ConnexioClient* client)
+{
+	// Descarrega tota la carpeta nom_directori amb tot el seu contingut recursivament. 
+	// Es construeix un arbre en el client amb els mateixos arxius que en el servidor. 
+	// L'arrel de la estructura en el client serà nom_directori.
+	//Farem servir TARGZ de la carpeta. El client ho desempaquetarà i crearà l'arbre automàticament.
+	return 0;
+}
+
+//********************** Gestió d'usuaris **********************
+
+
+unsigned long ServerCpp::xifrar_password(const char* password) {
+	unsigned long hash = 5381;
+	int c;
+	while ((c = *password++)) {
+		hash = ((hash << 5) + hash) + c;
+	}
+	return hash;
+}
+
+/// <summary>
+/// Comprueba si un usuario existe en el archivo 'usuaris.txt'.
+/// </summary>
+/// <param name="username">Nombre de usuario a buscar. La comparación es exactamente igual (sensible a mayúsculas/minúsculas).</param>
+/// <returns>true si el usuario se encuentra en el archivo; false si no se encuentra o si no se puede abrir el archivo.</returns>
+bool ServerCpp::existeix_usuari(const char* username)
+{
+	FILE* fitxer = fopen("usuaris.txt", "r");
+	if (fitxer == NULL) {
+		return false;
+	}
+	char linia[128];
+	char usr_fitxer[LEN_USUARI + 1];
+	unsigned long pwd_fitxer;
+	bool trobat = false;
+	while (fgets(linia, sizeof(linia), fitxer)) {
+		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
+			if (strcmp(username, usr_fitxer) == 0)
+				trobat = true;
+			break;
+		}
+	}
+	fclose(fitxer);
+	return trobat;
+}
+
+/// <summary>
+/// Registra un nuevo usuario: comprueba si ya existe, cifra la contraseña y la anexa al fichero de usuarios.
+/// </summary>
+/// <param name="username">Nombre de usuario a registrar.</param>
+/// <param name="password">Contraseña en texto plano; se cifra internamente antes de almacenarla.</param>
+int ServerCpp::registrar_usuari(const char* username, const char* password) {
+	if (existeix_usuari(username)) {
+		printf("[ERROR] L'usuari '%s' ja existeix.\n", username);
+		return -1;
+	}
+	pthread_mutex_lock(&semafor_clients);
+
+	FILE* fitxer = fopen("usuaris.txt", "a");
+	if (fitxer == NULL) {
+		perror("[ERROR] Error obrint usuaris.txt");
+		pthread_mutex_unlock(&semafor_clients);
+		return -2;
+	}
+
+	unsigned long hash_pwd = xifrar_password(password);
+	fprintf(fitxer, "%s:%lu\n", username, hash_pwd);
+	fclose(fitxer);
+	pthread_mutex_unlock(&semafor_clients);
+
+	printf("[INFO] Usuari registrat correctament: %s\n", username);
+	return 0;
+}
+
+/// <summary>
+/// Valida un usuario comprobando el nombre y el hash de la contraseña almacenados en el fichero 'usuaris.txt'.
+/// </summary>
+/// <param name="usr">Nombre de usuario a validar.</param>
+/// <param name="pwd">Contraseña en texto plano; se aplica xifrar_password y se compara el hash con el almacenado.</param>
+/// <returns>true si se encuentra una entrada con el mismo usuario y hash de contraseña; false en caso contrario o si no se puede abrir el fichero.</returns>
+bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
+	FILE* fitxer = fopen("usuaris.txt", "r");
+	if (fitxer == NULL) return false;
+
+	char linia[128];
+	char usr_fitxer[LEN_USUARI + 1];
+	unsigned long pwd_fitxer;
+	bool trobat = false;
+
+	unsigned long hash_rebut = xifrar_password(pwd);
+
+	while (fgets(linia, sizeof(linia), fitxer)) {
+		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
+			if (strcmp(usr, usr_fitxer) == 0 && hash_rebut == pwd_fitxer) {
+				trobat = true;
+				break;
+			}
+		}
+	}
+	fclose(fitxer);
+	return trobat;
+}
+

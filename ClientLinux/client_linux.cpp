@@ -19,7 +19,7 @@ int demanar_operacio() {
 	return op;
 }
 
-void demanar_usuari_pwd(MissatgeHeader* header) {
+void demanar_usuari_pwd(ConnectionHeader* header) {
 	//Demanar usuari i contrasenya
 	printf("Usuari: ");
 	scanf("%s", header->usuari);
@@ -38,7 +38,7 @@ void demanar_usuari_pwd(MissatgeHeader* header) {
 int main() {
 	int socket_server;
 	struct sockaddr_in server;
-	MissatgeHeader header;
+	ConnectionHeader header;
 	int validacio;
 	char buffer[LEN_BUFFER];
 	char buffer_rebut[LEN_BUFFER*4];
@@ -87,7 +87,7 @@ int main() {
 	}
 	
 	// Enviem el header al servidor
-	write(socket_server, &header, sizeof(MissatgeHeader));
+	write(socket_server, &header, sizeof(ConnectionHeader));
 	// Esperar la validació del servidor
 	read(socket_server, &validacio, sizeof(int));
 

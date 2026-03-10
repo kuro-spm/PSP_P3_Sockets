@@ -1,64 +1,61 @@
 #pragma once
+#include <netinet/in.h> // Per a sockaddr_in
+#include <pthread.h>    // Per a pthread_t i mutex
+#include <csignal>     // Per a sig_atomic_t
 #include "ConnexioClient.h"
 #include "Dades.h"
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <pthread.h>
-#include <string>
-#include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <csignal>
+
+#include "ConnexioClient.h"
+#include "Dades.h"
 
 #define MAX_CLIENTS 8
 
+// Forward declaration per a l'estructura auxiliar
+class ServerCpp;
 
-class ServerCpp
-{
-private:
-    struct sockaddr_in config_servidor;
-    int socket_escolta;
-    ConnexioClient clients[MAX_CLIENTS];
-    pthread_mutex_t semafor_clients;
-    volatile sig_atomic_t running;
-    std::string version;
+struct ThreadArgs {
+    ServerCpp* servidor;
+    ConnexioClient* client;
+};
 
-    // Mètodes auxiliars interns de seguretat i dades
-    bool existeix_usuari(const std::string& username);
-    bool validar_usuari(const std::string& usr, const std::string& pwd);
-    bool ip_ja_connectada(const char* nova_ip);
-    unsigned long xifrar_password(const std::string& password);
-    int buscarPosicioLliure();
-
-
+class ServerCpp {
 public:
+    // --- Cicle de Vida ---
     ServerCpp();
     ~ServerCpp();
 
+    // --- Control del Servidor ---
     void inicialitzar();
     void runServer();
     void stopServer();
 
+    // --- Registre d'Usuaris ---
+    int registrar_usuari(const char* username, const char* password);
+
+private:
+    // --- Atributs de Xarxa i Estat ---
+    struct sockaddr_in config_servidor;
+    int socket_escolta;
+    volatile sig_atomic_t running;
+    const char* version;
+
+    // --- Gestió de Clients i Concurrència ---
+    ConnexioClient clients[MAX_CLIENTS];
+    pthread_mutex_t semafor_clients;
+
     static void* gestio_client(void* arg);
-	void finalitzar_connexio_client(ConnexioClient* client);
+    void finalitzar_connexio_client(ConnexioClient* client);
+    int buscarPosicioLliure();
+    bool ip_ja_connectada(const char* nova_ip);
 
+    // --- Seguretat i Validació ---
+    bool existeix_usuari(const char* username);
+    bool validar_usuari(const char* usr, const char* pwd);
+    unsigned long xifrar_password(const char* password);
 
-
-    //================== Funcionalitats del servidor ==================
-    // Ara reben l'objecte ConnexioClient que té tota la info (socket, path, etc.)
-    void registrar_usuari(const std::string& username, const std::string& password);
-    void dir_servidor(ConnexioClient* client);
-    void cd_path(ConnexioClient* client);
-    void download_file(ConnexioClient* client);
-    void rget_directory(ConnexioClient* client);
-
-};
-
-// Estructura auxiliar per passar dades al fil
-struct ThreadArgs {
-    ServerCpp* servidor;
-    ConnexioClient* client;
+    // --- Funcionalitats (Comandes del Protocol) ---
+    int dir_servidor(ConnexioClient* client);
+    int cd_path(ConnexioClient* client);
+    int download_file(ConnexioClient* client);
+    int rget_directory(ConnexioClient* client);
 };

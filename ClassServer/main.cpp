@@ -19,6 +19,7 @@ int main() {
 		servidor.registrar_usuari("alumne", "alumne");
 		servidor.registrar_usuari("sara", "prats");
 		servidor.registrar_usuari("marc", "brufau");
+		servidor.registrar_usuari("pau", "bobo");
 
 
         // Activem el bucle d'acceptació de clients:

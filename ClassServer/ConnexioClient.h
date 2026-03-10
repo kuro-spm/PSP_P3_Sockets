@@ -7,15 +7,14 @@
 #include <string.h>
 
 #define PATH_DEFECTE "./" // Path per defecte quan un client es connecta
-#define MAX_PATH 256
+#define MAX_PATH 512
 
 class ConnexioClient
 {
 private:
     // ATRIBUTS PRIVATS (Encapsulament)
-    std::string usuari;       // std::string gestiona la memòria per tu
-    std::string path_actual;
-
+    char usuari[LEN_USUARI];
+    char path_actual[MAX_PATH];
     int socket_cli;
     pthread_t fil_id;
     bool esta_ocupat;
@@ -41,14 +40,21 @@ public:
     bool getEstaOcupat() const { return esta_ocupat; }
     void setEstaOcupat(bool ocupat) { esta_ocupat = ocupat; }
 
-    // Retornem const char* per compatibilitat amb funcions de C (com opendir)
-    const char* getPathActual() const { return path_actual.c_str(); }    
-    void setPathActual(const std::string& nouPath) { path_actual = nouPath; }
-
     const char* getIpClient() const { return ip; }
 
-    const std::string& getUsuari() const { return usuari; }
-	void setUsuari(const std::string& nomUsuari) { usuari = nomUsuari; }
+    const char* getPathActual() const { return path_actual; }
+
+    void setPathActual(const char* nouPath) {
+        strncpy(this->path_actual, nouPath, MAX_PATH - 1);
+        this->path_actual[MAX_PATH - 1] = '\0'; 
+    }
+
+    const char* getUsuari() const { return usuari; }
+
+    void setUsuari(const char* nomUsuari) {
+        strncpy(this->usuari, nomUsuari, sizeof(this->usuari) - 1);
+        this->usuari[sizeof(this->usuari) - 1] = '\0';
+    }
 
  
 };

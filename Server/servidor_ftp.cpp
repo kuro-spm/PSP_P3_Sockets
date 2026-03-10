@@ -72,10 +72,10 @@ int validar_usuari(char* usr, char* pwd) {
 
 void* fil_gestio_client(void* argument_client) {
 	ControlClient* client = (ControlClient*)argument_client;
-	MissatgeHeader header; 
+	ConnectionHeader header; 
 	int resposta_validacio = 0;
 
-	if (read(client->socket_cli, &header, sizeof(MissatgeHeader)) > 0) {
+	if (read(client->socket_cli, &header, sizeof(ConnectionHeader)) > 0) {
 		if (validar_usuari(header.usuari, header.contrasenya) != 0 &&
 			header.operacio >= 1 && header.operacio <= 5) {
 			resposta_validacio = 1;

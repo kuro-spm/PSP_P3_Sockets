@@ -1,14 +1,15 @@
 #include "ConnexioClient.h"
 
 /// <summary>
-/// Constructor per defecte: Inicialitza els atributs a valors segurs i per defecte.
-/// socket_cli a -1 (indicant que no hi ha connexió), esta_ocupat a false, path_actual a "." (directori actual) i ip buida.
-/// Aquest constructor és útil quan es crea un objecte ConnexioClient sense dades immediates, i es vol inicialitzar més tard amb el mètode inicialitzar().
+/// Constructor de ConnexioClient que inicializa los miembros internos: establece socket_cli a SOCKET_ATURAT, marca esta_ocupat como false, copia PATH_DEFECTE en path_actual usando strncpy y asegura el terminador nulo, y limpia los buffers usuari e ip.
 /// </summary>
 ConnexioClient::ConnexioClient() {
     socket_cli = SOCKET_ATURAT;
     esta_ocupat = false;
-    path_actual = PATH_DEFECTE; 
+    strncpy(this->path_actual, PATH_DEFECTE, MAX_PATH - 1);
+    this->path_actual[MAX_PATH - 1] = '\0';
+
+    memset(usuari, 0, sizeof(usuari));
     memset(ip, 0, INET_ADDRSTRLEN);
 }
 
@@ -23,16 +24,18 @@ ConnexioClient::~ConnexioClient() {
 }
 
 /// <summary>
-/// Inicializa la conexión del cliente: asigna el descriptor de socket, marca la conexión como ocupada, restablece el path al valor por defecto y copia la dirección IP del cliente si se proporciona.
+/// Inicializa la conexión del cliente con el socket proporcionado y la dirección IP. Establece socket_cli, marca esta_ocupat como true, copia PATH_DEFECTE en path_actual usando strncpy y asegura el terminador nulo, y copia ip_client en ip si se proporciona.
 /// </summary>
-/// <param name="socket">Descriptor de socket del cliente (entero).</param>
-/// <param name="ip_client">Cadena con la dirección IP del cliente; puede ser NULL. Si no es NULL, se copia en el campo interno de IP usando strncpy hasta INET_ADDRSTRLEN bytes.</param>
 void ConnexioClient::inicialitzar(int socket, const char* ip_client) {
     socket_cli = socket;
     esta_ocupat = true;
-    path_actual = PATH_DEFECTE;
+
+    strncpy(this->path_actual, PATH_DEFECTE, MAX_PATH - 1);
+    this->path_actual[MAX_PATH - 1] = '\0';
+
     if (ip_client) {
-        strncpy(ip, ip_client, INET_ADDRSTRLEN);
+        strncpy(ip, ip_client, INET_ADDRSTRLEN - 1);
+        ip[INET_ADDRSTRLEN - 1] = '\0'; // Assegurem el tancament de la cadena
     }
 }
 
