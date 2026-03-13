@@ -146,9 +146,11 @@ void* ServerCpp::gestio_client(void* arg) {
 			if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) break;
 
 			switch (header.operacio) {
-			case OP_LS:       servidor->dir_servidor(cclient); break;
-			case OP_CD:       servidor->cd_path(cclient); break;
-			case OP_DOWNLOAD: servidor->download_file(cclient); break;
+			case OP_DIR: servidor->op_dir(cclient); break;
+			case OP_CD:  servidor->op_cd(cclient); break;
+			case OP_GET: servidor->op_get(cclient); break;
+			case OP_RGET: servidor->op_rget(cclient); break;
+			case OP_REGISTRE: servidor->op_registrar(cclient); break;
 			case OP_SORTIR:
 				continuar = false;
 				printf("[LOG] Usuari %s s'ha desconnectat.\n", cclient->getUsuari());
@@ -205,7 +207,7 @@ int ServerCpp::buscarPosicioLliure() {
 
 /********************** FUNCIONALITATS DEL SERVIDOR **********************/
 
-int ServerCpp::dir_servidor(ConnexioClient* client)
+int ServerCpp::op_dir(ConnexioClient* client)
 {
 	char nom_fitxer[LEN_BUFFER];
 	char buffer[LEN_PAQUET];
@@ -249,7 +251,7 @@ int ServerCpp::dir_servidor(ConnexioClient* client)
 /// </summary>
 /// <param name="client">Puntero a ConnexioClient que representa la conexión del cliente. Se emplea para leer la nueva ruta desde su socket (mediante getSocketCli()) y para almacenar la ruta actualizada (setPathActual()).</param>
 /// <returns>0 si la ruta se actualizó correctamente; -1 en caso de error (por ejemplo, fallo de lectura o si el directorio no existe).</returns>
-int ServerCpp::cd_path(ConnexioClient* client) {
+int ServerCpp::op_cd(ConnexioClient* client) {
 	char nou_path[LEN_BUFFER];
 	ssize_t rebut = read(client->getSocketCli(), nou_path, sizeof(nou_path) - 1);
 
@@ -268,20 +270,133 @@ int ServerCpp::cd_path(ConnexioClient* client) {
 	return -1; // Retornar error si no s'ha llegit res
 }
 
-int ServerCpp::download_file(ConnexioClient* client)
+int ServerCpp::op_get(ConnexioClient* client)
 {
-	// Descarrega un fitxer a la màquina del client amb el mateix nom que té en el servidor.
+	char nom_fitxer[LEN_BUFFER];
+	char ruta_completa[MAX_PATH];
+	char buffer[LEN_PAQUET];
+	struct stat st;
+
+	// 1. Llegir quin fitxer vol el client
+	ssize_t rebut = read(client->getSocketCli(), nom_fitxer, sizeof(nom_fitxer) - 1);
+	if (rebut <= 0) return -1;
+	nom_fitxer[rebut] = '\0';
+
+	// 2. Construir la ruta i obrir el fitxer
+	snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", client->getPathActual(), nom_fitxer);
+	int fd_fitxer = open(ruta_completa, O_RDONLY);
+
+	if (fd_fitxer < 0) {
+		// Si el fitxer no existeix, avisem al client enviant una mida de -1
+		long error_mida = NO_VALID;
+		write(client->getSocketCli(), &error_mida, sizeof(long));
+		perror("Error al obrir el fitxer sol·licitat");
+		return -2;
+	}
+
+	// 3. Obtenir la mida del fitxer amb fstat
+	if (fstat(fd_fitxer, &st) < 0) {
+		long error_mida = -1;
+		write(client->getSocketCli(), &error_mida, sizeof(long));
+		close(fd_fitxer);
+		return -3;
+	}
+	long mida_fitxer = st.st_size;
+
+	// 4. ENVIAR LA MIDA AL CLIENT
+	// El client sap que els primers 8 bytes (mida de long) són el tamany d'arxiu que ha de rebre. Si és <0, el client sap que hi ha hagut un error i no ha de esperar dades.
+	if (write(client->getSocketCli(), &mida_fitxer, sizeof(long)) < 0) {
+		close(fd_fitxer);
+		return -4;
+	}
+
+	printf("[INFO:GET] Enviant %s (%ld bytes) al client %d\n", nom_fitxer, mida_fitxer, client->getSocketCli());
+
+	// 5. Bucle de transferència BINÀRIA
+	ssize_t bytes_llegits, bytes_enviats;
+	long total_enviat = 0;
+
+	while ((bytes_llegits = read(fd_fitxer, buffer, sizeof(buffer))) > 0) {
+		bytes_enviats = write(client->getSocketCli(), buffer, bytes_llegits);
+		if (bytes_enviats < 0) {
+			perror("Error enviant dades al client");
+			break;
+		}
+		total_enviat += bytes_enviats;
+	}
+
+	// 6. Tancar recursos
+	close(fd_fitxer);
+	printf("[INFO:GET] Transferència finalitzada: %ld/%ld bytes enviats.\n", total_enviat, mida_fitxer);
+
 	return 0;
 }
 
-int ServerCpp::rget_directory(ConnexioClient* client)
+int ServerCpp::op_rget(ConnexioClient* client)
 {
 	// Descarrega tota la carpeta nom_directori amb tot el seu contingut recursivament. 
 	// Es construeix un arbre en el client amb els mateixos arxius que en el servidor. 
 	// L'arrel de la estructura en el client serà nom_directori.
 	//Farem servir TARGZ de la carpeta. El client ho desempaquetarà i crearà l'arbre automàticament.
+	char nom_carpeta[LEN_BUFFER];
+	char fitxer_tar[LEN_BUFFER + 10];
+	char comanda[LEN_BUFFER * 2];
+	char ruta_completa[MAX_PATH];
+	struct stat st;
+
+	// 1. Llegir quin directori vol el client
+	ssize_t rebut = read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1);
+	if (rebut <= 0) return -1;
+	nom_carpeta[rebut] = '\0';
+
+	// 2. Preparar noms i rutes
+	// Creem un nom de fitxer temporal, per exemple: nom_carpeta.tar.gz
+	snprintf(fitxer_tar, sizeof(fitxer_tar), "%s.tar.gz", nom_carpeta);
+	snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", client->getPathActual(), nom_carpeta);
+
+	// 3. EXECUTAR LA COMPRESSIÓ
+	// Fem servir la comanda 'tar': 
+	// -c (create), -z (gzip), -f (file)
+	// El 'C' canvia al directori pare per no incloure rutes absolutes rares
+	snprintf(comanda, sizeof(comanda), "tar -czf %s/%s -C %s .", client->getPathActual(), fitxer_tar, ruta_completa);
+
+	printf("[INFO:RGET] Comprimint directori: %s\n", comanda);
+	int res = system(comanda);
+	if (res != 0) {
+		long error_mida = -1;
+		write(client->getSocketCli(), &error_mida, sizeof(long));
+		return -2;
+	}
+
+	// 4. ENVIAR EL FITXER RESULTANT (Reutilitzem la lògica de op_get)
+	char ruta_tar[MAX_PATH];
+	snprintf(ruta_tar, sizeof(ruta_tar), "%s/%s", client->getPathActual(), fitxer_tar);
+
+	int fd_tar = open(ruta_tar, O_RDONLY);
+	if (fd_tar < 0 || fstat(fd_tar, &st) < 0) {
+		long error_mida = -1;
+		write(client->getSocketCli(), &error_mida, sizeof(long));
+		if (fd_tar >= 0) close(fd_tar);
+		return -3;
+	}
+
+	long mida_fitxer = st.st_size;
+	write(client->getSocketCli(), &mida_fitxer, sizeof(long));
+
+	char buffer[LEN_PAQUET];
+	ssize_t llegits;
+	while ((llegits = read(fd_tar, buffer, sizeof(buffer))) > 0) {
+		write(client->getSocketCli(), buffer, llegits);
+	}
+	close(fd_tar);
+
+	// 5. NETEJA: Esborrar el fitxer .tar.gz del servidor perquè no ocupi espai
+	unlink(ruta_tar);
+
+	printf("[INFO:RGET] Carpeta %s enviada correctament.\n", nom_carpeta);
 	return 0;
 }
+
 
 //********************** Gestió d'usuaris **********************
 

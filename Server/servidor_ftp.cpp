@@ -83,9 +83,9 @@ void* fil_gestio_client(void* argument_client) {
 		write(client->socket_cli, &resposta_validacio, sizeof(int));
 		if (resposta_validacio == 1) {
 			switch (header.operacio) {
-			case OP_LS: dir_servidor(client); break;
+			case OP_DIR: dir_servidor(client); break;
 			case OP_CD: cd_path(client); break;
-			case OP_DOWNLOAD: download_file(client); break;
+			case OP_GET: download_file(client); break;
 			case OP_REGISTRE: registrar_usuari(header.usuari, header.contrasenya); break;
 			}
 		}

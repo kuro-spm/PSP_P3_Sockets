@@ -64,13 +64,13 @@ int main() {
 	
 	//TODO: Omplir el header amb les dades necessaries per a fer l'operacio?
 	switch(op) {
-		case OP_LS:
+		case OP_DIR:
 			header.len = 0; // No enviem dades addicionals
 			break;
 		case OP_CD:
 			// El nou path es demanarà després de validar l'usuari
 			break;
-		case OP_DOWNLOAD:
+		case OP_GET:
 			// El nom del fitxer es demanarà després de validar l'usuari
 			break;
 		case OP_REGISTRE:
@@ -93,7 +93,7 @@ int main() {
 
 	if (validacio == VALID) {
 		switch (op) {
-		case OP_LS:
+		case OP_DIR:
 			printf("Operació LS seleccionada.\n");
 			int n;
 			printf("--- LLISTAT DEL SERVIDOR ---\n");
@@ -113,7 +113,7 @@ int main() {
 			scanf("%s", nou_path);
 			write(socket_server, &nou_path, LEN_BUFFER);
 			break;
-		case OP_DOWNLOAD:
+		case OP_GET:
 			printf("Operació DOWNLOAD seleccionada.\n");
 			//Demanar el nom del fitxer a descarregar i enviar-lo al servidor
 			char nom_fitxer[LEN_BUFFER];

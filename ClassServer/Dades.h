@@ -12,11 +12,13 @@
 
 // Definició de codis d'operació
 enum CodisOperacio {
-	OP_LS = 1,
+	OP_DIR = 1,
 	OP_CD = 2,
-	OP_DOWNLOAD = 3,
-	OP_REGISTRE = 4,
-	OP_SORTIR = 5
+	OP_GET = 3,
+	OP_RGET = 4,
+	OP_REGISTRE = 5,
+	OP_SORTIR = 6,
+	NUM_OPERACIONS // Aquest valor no s'utilitza com a operació real, sinó com a límit superior (té valor de l'ultim+1)
 };
 
 // Estructura del protocold
@@ -28,10 +30,7 @@ typedef struct {
 	int len;
 } ConnectionHeader;
 
-typedef struct {
-	char* info;
-	int len;
-} OperationHeader;
+
 
 
 

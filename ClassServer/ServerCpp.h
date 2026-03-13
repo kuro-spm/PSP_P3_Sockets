@@ -54,8 +54,9 @@ private:
     unsigned long xifrar_password(const char* password);
 
     // --- Funcionalitats (Comandes del Protocol) ---
-    int dir_servidor(ConnexioClient* client);
-    int cd_path(ConnexioClient* client);
-    int download_file(ConnexioClient* client);
-    int rget_directory(ConnexioClient* client);
+    int op_dir(ConnexioClient* client);
+    int op_cd(ConnexioClient* client);
+    int op_get(ConnexioClient* client);
+    int op_rget(ConnexioClient* client);
+    int op_registrar(ConnexioClient* client);
 };
