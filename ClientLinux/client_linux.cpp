@@ -9,6 +9,8 @@
 #include <stdlib.h>   
 #include "../ClassServer/Dades.h"
 
+#define CARPETA_DESCARREGUES "./ftpDownloads/"
+
 // Demana l'usuari i la contrasenya i els guarda al header
 void demanar_usuari_pwd(ConnectionHeader* h) {
     printf("--- AUTENTICACIÓ ---\n");
@@ -49,6 +51,17 @@ int main() {
     ConnectionHeader header;
     char buffer_rebut[LEN_PAQUET];
     bool sistema_actiu = true;
+
+    // 0. Crear la carpeta de descarregues si no existeix
+    struct stat st = { 0 };
+    if (stat(CARPETA_DESCARREGUES, &st) == -1) {
+#ifdef _WIN32
+        mkdir(CARPETA_DESCARREGUES);
+#else
+        mkdir(CARPETA_DESCARREGUES, 0777);
+#endif
+        printf("S'ha creat la carpeta: %s\n", CARPETA_DESCARREGUES);
+    }
 
     // Credencials inicials
     demanar_usuari_pwd(&header);
@@ -109,13 +122,11 @@ int main() {
             char nou_dir[LEN_BUFFER];
             printf("Directori destí: ");
             scanf("%s", nou_dir);
-            // Enviem el nou directori per saber si podem canviar-hi
             write(sock, nou_dir, strlen(nou_dir) + 1);
 
             int ok;
             read(sock, &ok, sizeof(int));
             if (ok == VALID) {
-                // Actualitzem la memòria local per a la PROPERA connexió
                 if (nou_dir[0] == '/') strcpy(path_local, nou_dir);
                 else {
                     if (strcmp(path_local, "/") != 0) strcat(path_local, "/");
@@ -131,13 +142,21 @@ int main() {
 
         case OP_GET: {
             char fitxer[LEN_BUFFER];
+            char ruta_completa[512];
             printf("Fitxer a descarregar: ");
             scanf("%s", fitxer);
             write(sock, fitxer, strlen(fitxer) + 1);
 
             long mida_f;
             if (read(sock, &mida_f, sizeof(long)) > 0 && mida_f >= 0) {
-                int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", CARPETA_DESCARREGUES, fitxer);
+
+                int fd = open(ruta_completa, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                if (fd < 0) {
+                    perror("Error al crear el fitxer local");
+                    break;
+                }
+
                 long total_f = 0;
                 while (total_f < mida_f) {
                     int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
@@ -146,7 +165,44 @@ int main() {
                     total_f += n;
                 }
                 close(fd);
-                printf("Fitxer '%s' descarregat amb èxit.\n", fitxer);
+                printf("Fitxer descarregat correctament a: %s\n", ruta_completa);
+            }
+            else {
+                printf("Error: El fitxer no existeix al servidor.\n");
+            }
+            break;
+        }
+
+        case OP_RGET: {
+            char carpeta[LEN_BUFFER];
+            printf("Carpeta (rget) a descarregar: ");
+            scanf("%s", carpeta);
+            write(sock, carpeta, strlen(carpeta) + 1);
+
+            int num_fitxers;
+            if (read(sock, &num_fitxers, sizeof(int)) > 0) {
+                printf("Rebent %d fitxers de la carpeta '%s'...\n", num_fitxers, carpeta);
+                for (int i = 0; i < num_fitxers; i++) {
+                    char nom_f[LEN_BUFFER];
+                    long tamany_f;
+                    read(sock, nom_f, sizeof(nom_f));
+                    read(sock, &tamany_f, sizeof(long));
+
+                    char r_comp[512];
+                    snprintf(r_comp, sizeof(r_comp), "%s%s", CARPETA_DESCARREGUES, nom_f);
+
+                    int fd = open(r_comp, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                    long rebut_f = 0;
+                    while (rebut_f < tamany_f) {
+                        int n = read(sock, buffer_rebut, (tamany_f - rebut_f < LEN_PAQUET) ? tamany_f - rebut_f : LEN_PAQUET);
+                        if (n <= 0) break;
+                        write(fd, buffer_rebut, n);
+                        rebut_f += n;
+                    }
+                    close(fd);
+                    printf("  [+] %s (%ld bytes) OK\n", nom_f, tamany_f);
+                }
+                printf("Descàrrega de carpeta finalitzada.\n");
             }
             break;
         }

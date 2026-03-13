@@ -16,6 +16,7 @@ x64/
 x86/
 [Aa]rm/
 [Aa]rm64/
+bin_linux/
 
 ## --- Carpetes de sortida de compilació (Linux/WSL) ---
 bin/
@@ -46,3 +47,10 @@ v14*.pdb
 ## --- Dades de l'aplicació ---
 # Ignorar la base de dades d'usuaris local
 usuaris.txt
+
+## --- Carpetes de treball del projecte ---
+# Carpeta on es guarden els executables del Makefile
+bin_linux/
+
+# Carpeta on el client descarrega els fitxers (OP_GET i OP_RGET)
+ftpDownloads/
