@@ -1,4 +1,3 @@
-#pragma once
 
 #include "ServerCpp.h"
 
@@ -28,6 +27,12 @@ ServerCpp::~ServerCpp()
 
 void ServerCpp::inicialitzar()
 {
+	char comanda_mkdir[128];
+    snprintf(comanda_mkdir, sizeof(comanda_mkdir), "mkdir -p %s", FTP_ROOT);
+
+    if (system(comanda_mkdir) != 0) {
+		throw "[ERROR] No s'ha pogut assegurar l'existència del directori arrel";
+    }
 	//inicialitzar semàfor
 	//semafor_clients = PTHREAD_MUTEX_INITIALIZER; //fora d'un metode es faria aixi...
 	pthread_mutex_init(&semafor_clients, NULL);
@@ -126,39 +131,42 @@ void* ServerCpp::gestio_client(void* arg) {
 
 	int socket = cclient->getSocketCli();
 	ConnectionHeader header;
-	bool continuar = true;
 
-	// Primer pas: Autenticació (fora del bucle principal)
+	// 1. LLEGIM L'ÚNIC HEADER (Conté Usuari, Pwd i Operació)
 	if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) {
 		cclient->tancarConnexio();
 		return NULL;
 	}
 
+	// 2. VALIDACIÓ D'USUARI
 	int resposta = servidor->validar_usuari(header.usuari, header.contrasenya) ? VALID : NO_VALID;
 	write(socket, &resposta, sizeof(int));
 
 	if (resposta == VALID) {
 		cclient->setUsuari(header.usuari);
 
-		// Bucle d'interacció: Mantenim el fil viu
-		while (continuar && servidor->running) {
-			// Llegim la següent operació del client
-			if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) break;
+		// 3. LLEGIR EL PATH ACTUAL QUE ENS ENVIA EL CLIENT
+		// El client sempre envia on està "virtualment" immediatament després de la validació
+		char path_rebut[MAX_PATH];
+		ssize_t n = read(socket, path_rebut, MAX_PATH - 1);
+		if (n > 0) {
+			path_rebut[n] = '\0';
+			cclient->setPathActual(path_rebut);
+		}
 
-			switch (header.operacio) {
-			case OP_DIR: servidor->op_dir(cclient); break;
-			case OP_CD:  servidor->op_cd(cclient); break;
-			case OP_GET: servidor->op_get(cclient); break;
-			case OP_RGET: servidor->op_rget(cclient); break;
-			case OP_REGISTRE: servidor->op_registrar(cclient); break;
-			case OP_SORTIR:
-				continuar = false;
-				printf("[LOG] Usuari %s s'ha desconnectat.\n", cclient->getUsuari());
-				break;
-			default: break;
-			}
+		printf("[LOG] Usuari %s a %s sol·licita OP %d\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio);
+
+		// 4. EXECUCIÓ ÚNICA
+		switch (header.operacio) {
+		case OP_DIR:  servidor->op_dir(cclient);  break;
+		case OP_CD:   servidor->op_cd(cclient);   break;
+		case OP_GET:  servidor->op_get(cclient);  break;
+		case OP_RGET: servidor->op_rget(cclient); break;
+		default: break;
 		}
 	}
+
+	// 5. FINALITZACIÓ (Model Transaccional: Una connexió, una operació)
 	cclient->tancarConnexio();
 	return NULL;
 }
@@ -207,193 +215,157 @@ int ServerCpp::buscarPosicioLliure() {
 
 /********************** FUNCIONALITATS DEL SERVIDOR **********************/
 
-int ServerCpp::op_dir(ConnexioClient* client)
-{
-	char nom_fitxer[LEN_BUFFER];
+int ServerCpp::op_dir(ConnexioClient* client) {
+	char nom_fitxer_temporal[LEN_BUFFER];
 	char buffer[LEN_PAQUET];
-	char comanda[LEN_BUFFER + 64];
-	int fd_txt;
-	ssize_t bytes_llegits;
+	char ruta_real[MAX_PATH];
+	struct stat st;
 
-	// 1. Definim el nom del fitxer temporal basat en el socket del client
-	snprintf(nom_fitxer, sizeof(nom_fitxer), "ls_client%d.txt", client->getSocketCli());
-	// 2. Executem la comanda del sistema per crear el fitxer
-	snprintf(comanda, sizeof(comanda), "ls -l %s > %s", client->getPathActual(), nom_fitxer);
-	if (system(comanda) != 0) {
-		perror("Error executant ls");
-		return -1;
-	}
-	// 3. Obrim el fitxer que acaba de crear "system" per lectura
-	fd_txt = open(nom_fitxer, O_RDONLY);
-	if (fd_txt < 0) {
-		perror("Error al obrir el fitxer temporal");
-		return -2;
-	}
-	// 4. Llegim del fitxer i escrivim directament al socket del client
-	// Fem un bucle: mentres puguem llegir del fitxer, enviem al socket
-	while ((bytes_llegits = read(fd_txt, buffer, sizeof(buffer))) > 0) {
-		// 'client->getSocketCli()' és el destí, 'buffer' la informació
-		if (write(client->getSocketCli(), buffer, bytes_llegits) < 0) {
-			perror("Error enviant dades al client");
-			break;
+	// 1. Obtenim la ruta real (ROOT + path virtual)
+	construir_ruta_real(client, NULL, ruta_real);
+
+	// 2. Generem un nom de fitxer temporal únic per socket
+	snprintf(nom_fitxer_temporal, sizeof(nom_fitxer_temporal), "ls_%d.txt", client->getSocketCli());
+
+	// 3. Calculem la mida de la comanda usant les variables definides
+	// Sumem MAX_PATH (ruta) + LEN_BUFFER (fitxer) + caràcters extres de la comanda
+	char comanda[MAX_PATH + LEN_BUFFER + 32];
+	snprintf(comanda, sizeof(comanda), "ls -l %s > %s", ruta_real, nom_fitxer_temporal);
+
+	printf("[INFO:LS] Executant: %s\n", comanda);
+	system(comanda);
+
+	// 4. Obrim el fitxer i enviem la mida primer
+	int fd = open(nom_fitxer_temporal, O_RDONLY);
+	if (fd >= 0) {
+		if (fstat(fd, &st) == 0) {
+			long mida = st.st_size;
+			// Enviem la mida (8 bytes) perquè el client sàpiga quant llegir
+			write(client->getSocketCli(), &mida, sizeof(long));
+
+			ssize_t n;
+			while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+				write(client->getSocketCli(), buffer, n);
+			}
 		}
+		close(fd);
+		unlink(nom_fitxer_temporal); // Esborrem el temporal
 	}
-	// 5. Netegem: tanquem el fitxer i l'esborrem del disc
-	close(fd_txt);
-	remove(nom_fitxer);
-
-	printf("[INFO:LS] Llistat enviat al client %d\n", client->getSocketCli());
 	return 0;
 }
 
-/// <summary>
-/// Lee una ruta enviada por el cliente y, si existe y es un directorio, actualiza la ruta actual asociada al cliente. Asegura la terminación nula de la cadena leída, comprueba la existencia con opendir, cierra el DIR y registra información o errores.
-/// </summary>
-/// <param name="client">Puntero a ConnexioClient que representa la conexión del cliente. Se emplea para leer la nueva ruta desde su socket (mediante getSocketCli()) y para almacenar la ruta actualizada (setPathActual()).</param>
-/// <returns>0 si la ruta se actualizó correctamente; -1 en caso de error (por ejemplo, fallo de lectura o si el directorio no existe).</returns>
 int ServerCpp::op_cd(ConnexioClient* client) {
-	char nou_path[LEN_BUFFER];
-	ssize_t rebut = read(client->getSocketCli(), nou_path, sizeof(nou_path) - 1);
+	char nou_path_virtual[MAX_PATH];
+	char ruta_real_proposada[MAX_PATH];
+	int resultat = NO_VALID;
 
+	// Llegim el directori al qual el client vol anar
+	ssize_t rebut = read(client->getSocketCli(), nou_path_virtual, MAX_PATH - 1);
 	if (rebut > 0) {
-		nou_path[rebut] = '\0'; // Assegurem que la cadena estigui tancada
-		DIR* dir = opendir(nou_path);
-		if (dir == NULL) {
-			perror("Error al canviar de directori");
-			return -1;
+		nou_path_virtual[rebut] = '\0';
+
+		// Seguretat básica
+		if (strstr(nou_path_virtual, "..") == NULL) {
+			char path_aux[MAX_PATH];
+			if (nou_path_virtual[0] != '/') {
+				snprintf(path_aux, MAX_PATH, "%s/%s", client->getPathActual(), nou_path_virtual);
+			}
+			else {
+				strncpy(path_aux, nou_path_virtual, MAX_PATH);
+			}
+
+			// Comprovem si el directori existeix realment al disc
+			snprintf(ruta_real_proposada, MAX_PATH, "%s%s", FTP_ROOT, path_aux);
+			DIR* dir = opendir(ruta_real_proposada);
+			if (dir != NULL) {
+				closedir(dir);
+				resultat = VALID; // El directori és vàlid
+			}
 		}
-		closedir(dir); // IMPORTANT: Tancar el DIR si s'ha obert correctament
-		client->setPathActual(nou_path);
-		printf("[INFO:CD] Client %d canviat a: %s\n", client->getSocketCli(), client->getPathActual());
-		return 0;
 	}
-	return -1; // Retornar error si no s'ha llegit res
+	// Informem al client si el canvi de directori és possible
+	write(client->getSocketCli(), &resultat, sizeof(int));
+	return (resultat == VALID) ? 0 : -1;
 }
 
 int ServerCpp::op_get(ConnexioClient* client)
 {
 	char nom_fitxer[LEN_BUFFER];
-	char ruta_completa[MAX_PATH];
+	char ruta_real[MAX_PATH];
 	char buffer[LEN_PAQUET];
 	struct stat st;
 
-	// 1. Llegir quin fitxer vol el client
-	ssize_t rebut = read(client->getSocketCli(), nom_fitxer, sizeof(nom_fitxer) - 1);
-	if (rebut <= 0) return -1;
-	nom_fitxer[rebut] = '\0';
+	if (read(client->getSocketCli(), nom_fitxer, sizeof(nom_fitxer) - 1) <= 0) return -1;
+	nom_fitxer[strlen(nom_fitxer)] = '\0';
 
-	// 2. Construir la ruta i obrir el fitxer
-	snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", client->getPathActual(), nom_fitxer);
-	int fd_fitxer = open(ruta_completa, O_RDONLY);
+	// Seguretat contra ".."
+	if (strstr(nom_fitxer, "..")) return -1;
 
+	// Convertim la petició del client en una ruta real al servidor
+	construir_ruta_real(client, nom_fitxer, ruta_real);
+
+	int fd_fitxer = open(ruta_real, O_RDONLY);
 	if (fd_fitxer < 0) {
-		// Si el fitxer no existeix, avisem al client enviant una mida de -1
-		long error_mida = NO_VALID;
-		write(client->getSocketCli(), &error_mida, sizeof(long));
-		perror("Error al obrir el fitxer sol·licitat");
+		long error = -1;
+		write(client->getSocketCli(), &error, sizeof(long));
 		return -2;
 	}
 
-	// 3. Obtenir la mida del fitxer amb fstat
-	if (fstat(fd_fitxer, &st) < 0) {
-		long error_mida = -1;
-		write(client->getSocketCli(), &error_mida, sizeof(long));
-		close(fd_fitxer);
-		return -3;
-	}
-	long mida_fitxer = st.st_size;
+	fstat(fd_fitxer, &st);
+	long mida = st.st_size;
+	write(client->getSocketCli(), &mida, sizeof(long));
 
-	// 4. ENVIAR LA MIDA AL CLIENT
-	// El client sap que els primers 8 bytes (mida de long) són el tamany d'arxiu que ha de rebre. Si és <0, el client sap que hi ha hagut un error i no ha de esperar dades.
-	if (write(client->getSocketCli(), &mida_fitxer, sizeof(long)) < 0) {
-		close(fd_fitxer);
-		return -4;
+	ssize_t llegits;
+	while ((llegits = read(fd_fitxer, buffer, sizeof(buffer))) > 0) {
+		write(client->getSocketCli(), buffer, llegits);
 	}
 
-	printf("[INFO:GET] Enviant %s (%ld bytes) al client %d\n", nom_fitxer, mida_fitxer, client->getSocketCli());
-
-	// 5. Bucle de transferència BINÀRIA
-	ssize_t bytes_llegits, bytes_enviats;
-	long total_enviat = 0;
-
-	while ((bytes_llegits = read(fd_fitxer, buffer, sizeof(buffer))) > 0) {
-		bytes_enviats = write(client->getSocketCli(), buffer, bytes_llegits);
-		if (bytes_enviats < 0) {
-			perror("Error enviant dades al client");
-			break;
-		}
-		total_enviat += bytes_enviats;
-	}
-
-	// 6. Tancar recursos
 	close(fd_fitxer);
-	printf("[INFO:GET] Transferència finalitzada: %ld/%ld bytes enviats.\n", total_enviat, mida_fitxer);
-
 	return 0;
 }
 
 int ServerCpp::op_rget(ConnexioClient* client)
 {
-	// Descarrega tota la carpeta nom_directori amb tot el seu contingut recursivament. 
-	// Es construeix un arbre en el client amb els mateixos arxius que en el servidor. 
-	// L'arrel de la estructura en el client serà nom_directori.
-	//Farem servir TARGZ de la carpeta. El client ho desempaquetarà i crearà l'arbre automàticament.
 	char nom_carpeta[LEN_BUFFER];
-	char fitxer_tar[LEN_BUFFER + 10];
-	char comanda[LEN_BUFFER * 2];
-	char ruta_completa[MAX_PATH];
+	char fitxer_tar[LEN_BUFFER + 32];
+	char comanda[MAX_PATH * 2];
+	char ruta_real_carpeta[MAX_PATH];
 	struct stat st;
 
-	// 1. Llegir quin directori vol el client
-	ssize_t rebut = read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1);
-	if (rebut <= 0) return -1;
-	nom_carpeta[rebut] = '\0';
+	if (read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1) <= 0) return -1;
+	nom_carpeta[strlen(nom_carpeta)] = '\0';
 
-	// 2. Preparar noms i rutes
-	// Creem un nom de fitxer temporal, per exemple: nom_carpeta.tar.gz
-	snprintf(fitxer_tar, sizeof(fitxer_tar), "%s.tar.gz", nom_carpeta);
-	snprintf(ruta_completa, sizeof(ruta_completa), "%s/%s", client->getPathActual(), nom_carpeta);
+	if (strstr(nom_carpeta, "..")) return -1;
 
-	// 3. EXECUTAR LA COMPRESSIÓ
-	// Fem servir la comanda 'tar': 
-	// -c (create), -z (gzip), -f (file)
-	// El 'C' canvia al directori pare per no incloure rutes absolutes rares
-	snprintf(comanda, sizeof(comanda), "tar -czf %s/%s -C %s .", client->getPathActual(), fitxer_tar, ruta_completa);
+	// Ruta real de la carpeta a comprimir
+	construir_ruta_real(client, nom_carpeta, ruta_real_carpeta);
 
-	printf("[INFO:RGET] Comprimint directori: %s\n", comanda);
-	int res = system(comanda);
-	if (res != 0) {
-		long error_mida = -1;
-		write(client->getSocketCli(), &error_mida, sizeof(long));
+	// Nom del fitxer temporal (es crea a la carpeta d'execució del servidor, no a ftp_root)
+	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_rget_%d.tar.gz", client->getSocketCli());
+
+	// Comprimim el contingut de la ruta real
+	snprintf(comanda, sizeof(comanda), "tar -czf %s -C %s . 2>/dev/null", fitxer_tar, ruta_real_carpeta);
+
+	if (system(comanda) != 0) {
+		long error = -1;
+		write(client->getSocketCli(), &error, sizeof(long));
 		return -2;
 	}
 
-	// 4. ENVIAR EL FITXER RESULTANT (Reutilitzem la lògica de op_get)
-	char ruta_tar[MAX_PATH];
-	snprintf(ruta_tar, sizeof(ruta_tar), "%s/%s", client->getPathActual(), fitxer_tar);
+	int fd_tar = open(fitxer_tar, O_RDONLY);
+	if (fd_tar >= 0 && fstat(fd_tar, &st) == 0) {
+		long mida = st.st_size;
+		write(client->getSocketCli(), &mida, sizeof(long));
 
-	int fd_tar = open(ruta_tar, O_RDONLY);
-	if (fd_tar < 0 || fstat(fd_tar, &st) < 0) {
-		long error_mida = -1;
-		write(client->getSocketCli(), &error_mida, sizeof(long));
-		if (fd_tar >= 0) close(fd_tar);
-		return -3;
+		char buffer[LEN_PAQUET];
+		ssize_t n;
+		while ((n = read(fd_tar, buffer, sizeof(buffer))) > 0) {
+			write(client->getSocketCli(), buffer, n);
+		}
+		close(fd_tar);
 	}
 
-	long mida_fitxer = st.st_size;
-	write(client->getSocketCli(), &mida_fitxer, sizeof(long));
-
-	char buffer[LEN_PAQUET];
-	ssize_t llegits;
-	while ((llegits = read(fd_tar, buffer, sizeof(buffer))) > 0) {
-		write(client->getSocketCli(), buffer, llegits);
-	}
-	close(fd_tar);
-
-	// 5. NETEJA: Esborrar el fitxer .tar.gz del servidor perquè no ocupi espai
-	unlink(ruta_tar);
-
-	printf("[INFO:RGET] Carpeta %s enviada correctament.\n", nom_carpeta);
+	unlink(fitxer_tar);
 	return 0;
 }
 
@@ -493,3 +465,20 @@ bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
 	return trobat;
 }
 
+//********************** Altres mètodes auxiliars **********************/
+
+/// <summary>
+/// Construye la ruta real en el sistema de archivos combinando el directorio raíz FTP, la ruta actual del cliente y, opcionalmente, un nombre de fichero.
+/// </summary>
+/// <param name="client">Puntero a ConnexioClient que proporciona la ruta actual del cliente (getPathActual()).</param>
+/// <param name="nom_fitxer">Nombre del fichero a añadir a la ruta. Si es NULL, la función solo construye la ruta del directorio.</param>
+/// <param name="ruta_desti">Buffer de salida donde se escribe la ruta resultante. Debe tener espacio para MAX_PATH bytes; la función utiliza snprintf para formatearla.</param>
+void ServerCpp::construir_ruta_real(ConnexioClient* client, const char* nom_fitxer, char* ruta_desti) {
+	// Si nom_fitxer és NULL, només volem la ruta del directori actual
+	if (nom_fitxer == NULL) {
+		snprintf(ruta_desti, MAX_PATH, "%s%s", FTP_ROOT, client->getPathActual());
+	}
+	else {
+		snprintf(ruta_desti, MAX_PATH, "%s%s/%s", FTP_ROOT, client->getPathActual(), nom_fitxer);
+	}
+}

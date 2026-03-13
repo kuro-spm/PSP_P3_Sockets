@@ -8,19 +8,22 @@ void capturar_sigint(int sig) {
     printf("\n[INFO] Aturant el servidor per senyal %d...\n", sig);
     servidor.stopServer();
     exit(0);
+    //En cas d'emergencia: fuser -k 10235/tcp
 }
 
 int main() {
     signal(SIGINT, capturar_sigint);
 
+    
+
     try {
         //Preparem els recursos (sockets, mutex, etc.)
         servidor.inicialitzar();
-		servidor.registrar_usuari("alumne", "alumne");
+		/*
+        servidor.registrar_usuari("alumne", "alumne");
 		servidor.registrar_usuari("sara", "prats");
 		servidor.registrar_usuari("marc", "brufau");
-		servidor.registrar_usuari("pau", "bobo");
-
+        */
 
         // Activem el bucle d'acceptació de clients:
         servidor.runServer();

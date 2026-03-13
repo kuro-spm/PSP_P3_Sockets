@@ -10,6 +10,9 @@
 #define LEN_USUARI 30
 #define LEN_CONTRASENYA 30
 
+#define FTP_ROOT "./ftp_root"  // Aquest serà el límit màxim del client
+#define PATH_DEFECTE "/"       // El client veurà l'arrel com "/"
+
 // Definició de codis d'operació
 enum CodisOperacio {
 	OP_DIR = 1,

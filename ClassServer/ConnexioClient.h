@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <string.h>
 
-#define PATH_DEFECTE "./" // Path per defecte quan un client es connecta
 #define MAX_PATH 512
 
 class ConnexioClient

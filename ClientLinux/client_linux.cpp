@@ -4,143 +4,163 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>    
+#include <sys/stat.h> 
+#include <stdlib.h>   
 #include "../ClassServer/Dades.h"
 
+// Funció per mostrar el menú i retornar l'opció
 int demanar_operacio() {
-	int op;
-	printf("Selecciona una operació:\n");
-	printf("1. ls\n");
-	printf("2. Canviar de directori\n");
-	printf("3. Descarregar arxiu\n");
-	printf("4. Registrar-se\n");
-	printf("5. Sortir\n");
-	printf("Opció: ");
-	scanf("%d", &op);
-	return op;
+    int op;
+    printf("\n--- CLIENT FTP ---\n");
+    printf("1. Llistar directori (ls)\n");
+    printf("2. Canviar de directori (cd)\n");
+    printf("3. Descarregar fitxer (get)\n");
+    printf("4. Descarregar carpeta (rget)\n");
+    printf("5. Registrar nou usuari\n");
+    printf("6. Sortir\n");
+    printf("Opció: ");
+    scanf("%d", &op);
+    return op;
 }
 
 void demanar_usuari_pwd(ConnectionHeader* header) {
-	//Demanar usuari i contrasenya
-	printf("Usuari: ");
-	scanf("%s", header->usuari);
-	printf("Contrasenya: ");
-	scanf("%s", header->contrasenya);
+    printf("Usuari: ");
+    scanf("%s", header->usuari);
+    printf("Contrasenya: ");
+    scanf("%s", header->contrasenya);
 }
 
-//TODO: Revisar three way handshake i validació de l'usuari abans d'enviar les dades de l'operació al servidor. 
-//En una implementació completa, després de connectar-se al servidor, 
-// el client hauria d'enviar un missatge de validació amb l'usuari i contrasenya, 
-// i esperar la resposta del servidor abans de demanar l'operació a realitzar. 
-// Si la validació és correcta, llavors es demana l'operació i s'envia al servidor. Si no, es tanca la connexió.
-
-//TODO: Revisar la implementació de quantes dades ha de llegir el client després d'enviar l'operació al servidor.
-
 int main() {
-	int socket_server;
-	struct sockaddr_in server;
-	ConnectionHeader header;
-	int validacio;
-	char buffer[LEN_BUFFER];
-	char buffer_rebut[LEN_BUFFER*4];
+    int socket_server;
+    struct sockaddr_in server;
+    ConnectionHeader header;
+    int validacio;
+    char buffer_rebut[LEN_PAQUET];
 
-	socket_server = socket(AF_INET, SOCK_STREAM, 0);
-	server.sin_family = AF_INET;
-	server.sin_addr.s_addr = inet_addr("127.0.0.1");
-	server.sin_port = htons(PORT_SERVEI);
-	memset(server.sin_zero, 0, 8); //Posar els 8 bytes de padding a 0
+    // 1. Configuració del socket
+    socket_server = socket(AF_INET, SOCK_STREAM, 0);
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server.sin_port = htons(PORT_SERVEI);
+    memset(server.sin_zero, 0, 8);
 
-	if (connect(socket_server, (struct sockaddr*)&server, sizeof(server)) < 0) {
-		perror("Error conectant");
-		return 1;
-	}
+    if (connect(socket_server, (struct sockaddr*)&server, sizeof(server)) < 0) {
+        perror("Error connectant al servidor");
+        return 1;
+    }
 
-	//Omplir el header amb les dades de l'usuari i contrasenya, i demanar l'operació a realitzar
-	int op = demanar_operacio();
-	demanar_usuari_pwd(&header);
+    // 2. Flux principal d'operacions
+    demanar_usuari_pwd(&header);
+    int op = demanar_operacio();
 
-	header.operacio = op;
-	header.versio = 1;
-	header.len = LEN_BUFFER;
-	
-	//TODO: Omplir el header amb les dades necessaries per a fer l'operacio?
-	switch(op) {
-		case OP_DIR:
-			header.len = 0; // No enviem dades addicionals
-			break;
-		case OP_CD:
-			// El nou path es demanarà després de validar l'usuari
-			break;
-		case OP_GET:
-			// El nom del fitxer es demanarà després de validar l'usuari
-			break;
-		case OP_REGISTRE:
-			// Encarra no s'ha implementat el registre, així que no calen dades addicionals
-			break;
-		case OP_SORTIR:
-			// No calen dades addicionals per a sortir
-			header.len = 0;
-			break;
-		default:
-			printf("Operació no reconeguda.\n");
-			close(socket_server);
-			return 1;
-	}
-	
-	// Enviem el header al servidor
-	write(socket_server, &header, sizeof(ConnectionHeader));
-	// Esperar la validació del servidor
-	read(socket_server, &validacio, sizeof(int));
+    header.operacio = op;
+    header.versio = 1;
 
-	if (validacio == VALID) {
-		switch (op) {
-		case OP_DIR:
-			printf("Operació LS seleccionada.\n");
-			int n;
-			printf("--- LLISTAT DEL SERVIDOR ---\n");
-			// Llegim mentre el servidor ens enviï dades
-			while ((n = read(socket_server, buffer_rebut, sizeof(buffer_rebut) - 1)) > 0) {
-				buffer_rebut[n] = '\0';
-				printf("%s", buffer_rebut);
-				// Si el servidor envia un caràcter buit, hem acabat
-				if (buffer_rebut[n - 1] == '\0') break;
-			}
-			break;
-		case OP_CD:
-			printf("Operació CD seleccionada.\n");
-			//Demanar el nou path al usuari i enviar-lo al servidor
-			char nou_path[LEN_BUFFER];
-			printf("Introdueix el nou path: ");
-			scanf("%s", nou_path);
-			write(socket_server, &nou_path, LEN_BUFFER);
-			break;
-		case OP_GET:
-			printf("Operació DOWNLOAD seleccionada.\n");
-			//Demanar el nom del fitxer a descarregar i enviar-lo al servidor
-			char nom_fitxer[LEN_BUFFER];
-			printf("Introdueix el nom del fitxer a descarregar: ");
-			scanf("%s", nom_fitxer);
-			write(socket_server, &nom_fitxer, LEN_BUFFER);
-			break;
-		case OP_REGISTRE:
-			printf("Operació REGISTRE seleccionada.\n");
-			//Encarra no s'ha implementat
-			//el registre al servidor, així que només imprimim un missatge.En una implementació completa, aquí es demanaria el nom d'usuari i la contrasenya, es construiria el header amb aquesta informació i s'enviaria al servidor per al registre.
-			printf("Funcionalitat de registre no implementada.\n");
-			break;
-		case OP_SORTIR:
-			printf("Operació SORTIR seleccionada.\n");
-			break;
-		default:
-			printf("Operació no reconeguda.\n");
-		}
-		//Revisar on cal realment llegir dades i amb quina mida després d'enviar l'operació al servidor. En una implementació completa, el client hauria de llegir la resposta del servidor després de cada operació per mostrar el resultat o els errors que puguin ocórrer.
-		read(socket_server, &buffer, LEN_BUFFER);
-		printf("Resultat del servidor: %s\n", buffer);
-	}
-	else {
-		printf("No s'ha pogut validar.\n");
-	}
+    // 1a VEGADA: Enviem per validar usuari
+    write(socket_server, &header, sizeof(ConnectionHeader));
+    read(socket_server, &validacio, sizeof(int));
 
-	close(socket_server);
-	return 0;
+    if (validacio == VALID) {
+        // 2a VEGADA: Enviem per indicar l'operació real (com l'espera el bucle del servidor)
+        write(socket_server, &header, sizeof(ConnectionHeader));
+
+        switch (op) {
+        case OP_DIR: {
+            long mida_llistat;
+            // El servidor fa: write(client->getSocketCli(), &mida, sizeof(long));
+            if (read(socket_server, &mida_llistat, sizeof(long)) > 0) {
+                long total_rebut = 0;
+                while (total_rebut < mida_llistat) {
+                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut) - 1);
+                    if (n <= 0) break;
+                    buffer_rebut[n] = '\0';
+                    printf("%s", buffer_rebut);
+                    total_rebut += n;
+                }
+            }
+            break;
+        }
+
+        case OP_CD: {
+            char nou_path[LEN_BUFFER];
+            printf("Introdueix el nou camí (path): ");
+            scanf("%s", nou_path);
+            // Enviem el path (el servidor l'espera dins del seu mètode op_cd)
+            write(socket_server, nou_path, strlen(nou_path));
+            printf("Petició de canvi de directori enviada.\n");
+            break;
+        }
+
+        case OP_GET: {
+            char nom_fitxer[LEN_BUFFER];
+            printf("Nom del fitxer a descarregar: ");
+            scanf("%s", nom_fitxer);
+
+            write(socket_server, nom_fitxer, strlen(nom_fitxer));
+
+            long mida;
+            if (read(socket_server, &mida, sizeof(long)) <= 0 || mida < 0) {
+                printf("[ERROR] El fitxer no existeix o error al servidor.\n");
+            }
+            else {
+                int fd_desti = open(nom_fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                long rebut = 0;
+                while (rebut < mida) {
+                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut));
+                    if (n <= 0) break;
+                    write(fd_desti, buffer_rebut, n);
+                    rebut += n;
+                }
+                close(fd_desti);
+                printf("Fitxer '%s' rebut correctament (%ld bytes).\n", nom_fitxer, mida);
+            }
+            break;
+        }
+
+        case OP_RGET: {
+            char nom_dir[LEN_BUFFER];
+            printf("Nom de la carpeta a descarregar: ");
+            scanf("%s", nom_dir);
+
+            write(socket_server, nom_dir, strlen(nom_dir));
+
+            long mida_tar;
+            if (read(socket_server, &mida_tar, sizeof(long)) <= 0 || mida_tar <= 0) {
+                printf("[ERROR] No s'ha pogut baixar la carpeta.\n");
+            }
+            else {
+                int fd_temp = open("rebut.tar.gz", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                long rebut_tar = 0;
+                while (rebut_tar < mida_tar) {
+                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut));
+                    if (n <= 0) break;
+                    write(fd_temp, buffer_rebut, n);
+                    rebut_tar += n;
+                }
+                close(fd_temp);
+
+                // Descomprimir i netejar
+                mkdir(nom_dir, 0777);
+                char cmd[LEN_BUFFER + 64];
+                snprintf(cmd, sizeof(cmd), "tar -xzf rebut.tar.gz -C %s", nom_dir);
+                system(cmd);
+                unlink("rebut.tar.gz");
+                printf("Carpeta '%s' descarregada i descomprimida.\n", nom_dir);
+            }
+            break;
+        }
+
+        case OP_SORTIR:
+            printf("Desconnectant del servidor...\n");
+            break;
+
+        default:
+            printf("Operació no implementada o desconeguda.\n");
+            break;
+        }
+
+        close(socket_server);
+        return 0;
+    }
 }
