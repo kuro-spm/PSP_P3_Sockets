@@ -6,14 +6,13 @@
 #include <unistd.h>
 #include <string.h>
 
-#define MAX_PATH 512
 
 class ConnexioClient
 {
 private:
     // ATRIBUTS PRIVATS (Encapsulament)
     char usuari[LEN_USUARI];
-    char path_actual[MAX_PATH];
+    char path_actual[LEN_PATH];
     int socket_cli;
     pthread_t fil_id;
     bool esta_ocupat;
@@ -44,8 +43,8 @@ public:
     const char* getPathActual() const { return path_actual; }
 
     void setPathActual(const char* nouPath) {
-        strncpy(this->path_actual, nouPath, MAX_PATH - 1);
-        this->path_actual[MAX_PATH - 1] = '\0'; 
+        strncpy(this->path_actual, nouPath, LEN_PATH - 1);
+        this->path_actual[LEN_PATH - 1] = '\0'; 
     }
 
     const char* getUsuari() const { return usuari; }

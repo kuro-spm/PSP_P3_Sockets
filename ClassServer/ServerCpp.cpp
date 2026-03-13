@@ -132,7 +132,7 @@ void* ServerCpp::gestio_client(void* arg) {
 	int socket = cclient->getSocketCli();
 	ConnectionHeader header;
 
-	// 1. LLEGIM L'ÚNIC HEADER (Conté Usuari, Pwd i Operació)
+	// 1. LLEGIM L'ÚNIC HEADER (Ara ja inclou el path_actual)
 	if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) {
 		cclient->tancarConnexio();
 		return NULL;
@@ -145,14 +145,9 @@ void* ServerCpp::gestio_client(void* arg) {
 	if (resposta == VALID) {
 		cclient->setUsuari(header.usuari);
 
-		// 3. LLEGIR EL PATH ACTUAL QUE ENS ENVIA EL CLIENT
-		// El client sempre envia on està "virtualment" immediatament després de la validació
-		char path_rebut[MAX_PATH];
-		ssize_t n = read(socket, path_rebut, MAX_PATH - 1);
-		if (n > 0) {
-			path_rebut[n] = '\0';
-			cclient->setPathActual(path_rebut);
-		}
+		// 3. ASSIGNEM EL PATH QUE JA VE DINS DEL HEADER
+		// Ja no fem read() extra, el path ja és a header.path_actual
+		cclient->setPathActual(header.path_actual);
 
 		printf("[LOG] Usuari %s a %s sol·licita OP %d\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio);
 
@@ -166,11 +161,10 @@ void* ServerCpp::gestio_client(void* arg) {
 		}
 	}
 
-	// 5. FINALITZACIÓ (Model Transaccional: Una connexió, una operació)
+	// 5. FINALITZACIÓ
 	cclient->tancarConnexio();
 	return NULL;
 }
-
 void ServerCpp::finalitzar_connexio_client(ConnexioClient* client)
 {
 	client->tancarConnexio();
@@ -218,7 +212,7 @@ int ServerCpp::buscarPosicioLliure() {
 int ServerCpp::op_dir(ConnexioClient* client) {
 	char nom_fitxer_temporal[LEN_BUFFER];
 	char buffer[LEN_PAQUET];
-	char ruta_real[MAX_PATH];
+	char ruta_real[LEN_PATH];
 	struct stat st;
 
 	// 1. Obtenim la ruta real (ROOT + path virtual)
@@ -228,8 +222,8 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 	snprintf(nom_fitxer_temporal, sizeof(nom_fitxer_temporal), "ls_%d.txt", client->getSocketCli());
 
 	// 3. Calculem la mida de la comanda usant les variables definides
-	// Sumem MAX_PATH (ruta) + LEN_BUFFER (fitxer) + caràcters extres de la comanda
-	char comanda[MAX_PATH + LEN_BUFFER + 32];
+	// Sumem LEN_PATH (ruta) + LEN_BUFFER (fitxer) + caràcters extres de la comanda
+	char comanda[LEN_PATH + LEN_BUFFER + 32];
 	snprintf(comanda, sizeof(comanda), "ls -l %s > %s", ruta_real, nom_fitxer_temporal);
 
 	printf("[INFO:LS] Executant: %s\n", comanda);
@@ -255,27 +249,27 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 }
 
 int ServerCpp::op_cd(ConnexioClient* client) {
-	char nou_path_virtual[MAX_PATH];
-	char ruta_real_proposada[MAX_PATH];
+	char nou_path_virtual[LEN_PATH];
+	char ruta_real_proposada[LEN_PATH];
 	int resultat = NO_VALID;
 
 	// Llegim el directori al qual el client vol anar
-	ssize_t rebut = read(client->getSocketCli(), nou_path_virtual, MAX_PATH - 1);
+	ssize_t rebut = read(client->getSocketCli(), nou_path_virtual, LEN_PATH - 1);
 	if (rebut > 0) {
 		nou_path_virtual[rebut] = '\0';
 
 		// Seguretat básica
 		if (strstr(nou_path_virtual, "..") == NULL) {
-			char path_aux[MAX_PATH];
+			char path_aux[LEN_PATH];
 			if (nou_path_virtual[0] != '/') {
-				snprintf(path_aux, MAX_PATH, "%s/%s", client->getPathActual(), nou_path_virtual);
+				snprintf(path_aux, LEN_PATH, "%s/%s", client->getPathActual(), nou_path_virtual);
 			}
 			else {
-				strncpy(path_aux, nou_path_virtual, MAX_PATH);
+				strncpy(path_aux, nou_path_virtual, LEN_PATH);
 			}
 
 			// Comprovem si el directori existeix realment al disc
-			snprintf(ruta_real_proposada, MAX_PATH, "%s%s", FTP_ROOT, path_aux);
+			snprintf(ruta_real_proposada, LEN_PATH, "%s%s", FTP_ROOT, path_aux);
 			DIR* dir = opendir(ruta_real_proposada);
 			if (dir != NULL) {
 				closedir(dir);
@@ -291,7 +285,7 @@ int ServerCpp::op_cd(ConnexioClient* client) {
 int ServerCpp::op_get(ConnexioClient* client)
 {
 	char nom_fitxer[LEN_BUFFER];
-	char ruta_real[MAX_PATH];
+	char ruta_real[LEN_PATH];
 	char buffer[LEN_PAQUET];
 	struct stat st;
 
@@ -328,8 +322,8 @@ int ServerCpp::op_rget(ConnexioClient* client)
 {
 	char nom_carpeta[LEN_BUFFER];
 	char fitxer_tar[LEN_BUFFER + 32];
-	char comanda[MAX_PATH * 2];
-	char ruta_real_carpeta[MAX_PATH];
+	char comanda[LEN_PATH * 2];
+	char ruta_real_carpeta[LEN_PATH];
 	struct stat st;
 
 	if (read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1) <= 0) return -1;
@@ -472,13 +466,13 @@ bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
 /// </summary>
 /// <param name="client">Puntero a ConnexioClient que proporciona la ruta actual del cliente (getPathActual()).</param>
 /// <param name="nom_fitxer">Nombre del fichero a añadir a la ruta. Si es NULL, la función solo construye la ruta del directorio.</param>
-/// <param name="ruta_desti">Buffer de salida donde se escribe la ruta resultante. Debe tener espacio para MAX_PATH bytes; la función utiliza snprintf para formatearla.</param>
+/// <param name="ruta_desti">Buffer de salida donde se escribe la ruta resultante. Debe tener espacio para LEN_PATH bytes; la función utiliza snprintf para formatearla.</param>
 void ServerCpp::construir_ruta_real(ConnexioClient* client, const char* nom_fitxer, char* ruta_desti) {
 	// Si nom_fitxer és NULL, només volem la ruta del directori actual
 	if (nom_fitxer == NULL) {
-		snprintf(ruta_desti, MAX_PATH, "%s%s", FTP_ROOT, client->getPathActual());
+		snprintf(ruta_desti, LEN_PATH, "%s%s", FTP_ROOT, client->getPathActual());
 	}
 	else {
-		snprintf(ruta_desti, MAX_PATH, "%s%s/%s", FTP_ROOT, client->getPathActual(), nom_fitxer);
+		snprintf(ruta_desti, LEN_PATH, "%s%s/%s", FTP_ROOT, client->getPathActual(), nom_fitxer);
 	}
 }

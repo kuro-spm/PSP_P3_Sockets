@@ -9,6 +9,7 @@
 #define LEN_PAQUET 1024
 #define LEN_USUARI 30
 #define LEN_CONTRASENYA 30
+#define LEN_PATH 512
 
 #define FTP_ROOT "./ftp_root"  // Aquest serà el límit màxim del client
 #define PATH_DEFECTE "/"       // El client veurà l'arrel com "/"
@@ -30,6 +31,7 @@ typedef struct {
 	int versio;
 	char usuari[LEN_USUARI];
 	char contrasenya[LEN_CONTRASENYA];
+	char path_actual[LEN_PATH];
 	int len;
 } ConnectionHeader;
 

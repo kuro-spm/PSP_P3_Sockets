@@ -9,8 +9,40 @@
 #include <stdlib.h>   
 #include "../ClassServer/Dades.h"
 
-// Variable global del client per recordar on es troba (Gaurdià de la memòria)
-char path_local[MAX_PATH] = "/";
+// Demana l'usuari i la contrasenya i els guarda al header
+void demanar_usuari_pwd(ConnectionHeader* h) {
+    printf("--- AUTENTICACIÓ ---\n");
+    printf("Usuari: ");
+    scanf("%s", h->usuari);
+    printf("Contrasenya: ");
+    scanf("%s", h->contrasenya);
+    // Inicialitzem la versió i el path per defecte al header
+    h->versio = 1;
+    strncpy(h->path_actual, "/", LEN_PATH - 1);
+}
+
+// Mostra el menú i retorna el codi de l'operació
+int demanar_operacio() {
+    int opcio;
+    printf("\nSELECCIONA UNA OPERACIÓ:\n");
+    printf("%d. Llistar fitxers (ls)\n", OP_DIR);
+    printf("%d. Canviar directori (cd)\n", OP_CD);
+    printf("%d. Descarregar fitxer (get)\n", OP_GET);
+    printf("%d. Descarregar carpeta (rget)\n", OP_RGET);
+    printf("%d. Registrar nou usuari\n", OP_REGISTRE);
+    printf("%d. Sortir\n", OP_SORTIR);
+    printf("Opcio: ");
+
+    if (scanf("%d", &opcio) != 1) {
+        // Neteja del buffer en cas d'introduir lletres
+        while (getchar() != '\n');
+        return -1;
+    }
+    return opcio;
+}
+
+// Memòria local del client
+char path_local[LEN_PATH] = "/";
 
 int main() {
     struct sockaddr_in server_addr;
@@ -18,7 +50,7 @@ int main() {
     char buffer_rebut[LEN_PAQUET];
     bool sistema_actiu = true;
 
-    // Demanem credencials un cop al principi
+    // Credencials inicials
     demanar_usuari_pwd(&header);
 
     while (sistema_actiu) {
@@ -39,23 +71,23 @@ int main() {
             break;
         }
 
-        // 1. Enviar Header amb l'operació actual
+        // 1. Preparem el Header amb l'operació i el path actual
         header.operacio = op;
+        strncpy(header.path_actual, path_local, LEN_PATH - 1);
+        header.path_actual[LEN_PATH - 1] = '\0';
+
+        // 2. Enviem tot el bloc de cop (Header + Path + Credencials)
         write(sock, &header, sizeof(ConnectionHeader));
 
-        // 2. Rebre validació d'usuari
+        // 3. Rebre validació
         int validacio;
-        read(sock, &validacio, sizeof(int));
-        if (validacio != VALID) {
-            printf("Error d'autenticació.\n");
+        if (read(sock, &validacio, sizeof(int)) <= 0 || validacio != VALID) {
+            printf("Error d'autenticació o servidor tancat.\n");
             close(sock);
             break;
         }
 
-        // 3. Enviar el nostre PATH ACTUAL (La nostra memòria)
-        write(sock, path_local, strlen(path_local) + 1);
-
-        // 4. Executar lògica de l'operació
+        // 4. Executar lògica segons l'operació
         switch (op) {
         case OP_DIR: {
             long mida;
@@ -77,21 +109,22 @@ int main() {
             char nou_dir[LEN_BUFFER];
             printf("Directori destí: ");
             scanf("%s", nou_dir);
+            // Enviem el nou directori per saber si podem canviar-hi
             write(sock, nou_dir, strlen(nou_dir) + 1);
 
             int ok;
             read(sock, &ok, sizeof(int));
             if (ok == VALID) {
-                // Actualitzem la nostra memòria local
+                // Actualitzem la memòria local per a la PROPERA connexió
                 if (nou_dir[0] == '/') strcpy(path_local, nou_dir);
                 else {
                     if (strcmp(path_local, "/") != 0) strcat(path_local, "/");
                     strcat(path_local, nou_dir);
                 }
-                printf("Directori actualitzat a: %s\n", path_local);
+                printf("Directori actualitzat localment: %s\n", path_local);
             }
             else {
-                printf("Error: El directori no existeix.\n");
+                printf("Error: El servidor no troba aquest directori.\n");
             }
             break;
         }
@@ -108,11 +141,12 @@ int main() {
                 long total_f = 0;
                 while (total_f < mida_f) {
                     int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
+                    if (n <= 0) break;
                     write(fd, buffer_rebut, n);
                     total_f += n;
                 }
                 close(fd);
-                printf("Fitxer rebut.\n");
+                printf("Fitxer '%s' descarregat amb èxit.\n", fitxer);
             }
             break;
         }
@@ -121,6 +155,5 @@ int main() {
         // --- FINAL DE LA TRANSACCIÓ ---
         close(sock);
     }
-
     return 0;
 }

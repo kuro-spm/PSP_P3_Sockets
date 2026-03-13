@@ -6,8 +6,8 @@
 ConnexioClient::ConnexioClient() {
     socket_cli = SOCKET_ATURAT;
     esta_ocupat = false;
-    strncpy(this->path_actual, PATH_DEFECTE, MAX_PATH - 1);
-    this->path_actual[MAX_PATH - 1] = '\0';
+    strncpy(this->path_actual, PATH_DEFECTE, LEN_PATH - 1);
+    this->path_actual[LEN_PATH - 1] = '\0';
 
     memset(usuari, 0, sizeof(usuari));
     memset(ip, 0, INET_ADDRSTRLEN);
@@ -30,8 +30,8 @@ void ConnexioClient::inicialitzar(int socket, const char* ip_client) {
     socket_cli = socket;
     esta_ocupat = true;
 
-    strncpy(this->path_actual, PATH_DEFECTE, MAX_PATH - 1);
-    this->path_actual[MAX_PATH - 1] = '\0';
+    strncpy(this->path_actual, PATH_DEFECTE, LEN_PATH - 1);
+    this->path_actual[LEN_PATH - 1] = '\0';
 
     if (ip_client) {
         strncpy(ip, ip_client, INET_ADDRSTRLEN - 1);
