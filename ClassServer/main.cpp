@@ -19,11 +19,11 @@ int main() {
     try {
         //Preparem els recursos (sockets, mutex, etc.)
         servidor.inicialitzar();
-		/*
+		
         servidor.registrar_usuari("alumne", "alumne");
 		servidor.registrar_usuari("sara", "prats");
 		servidor.registrar_usuari("marc", "brufau");
-        */
+
 
         // Activem el bucle d'acceptació de clients:
         servidor.runServer();
