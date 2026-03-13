@@ -9,158 +9,118 @@
 #include <stdlib.h>   
 #include "../ClassServer/Dades.h"
 
-// Funció per mostrar el menú i retornar l'opció
-int demanar_operacio() {
-    int op;
-    printf("\n--- CLIENT FTP ---\n");
-    printf("1. Llistar directori (ls)\n");
-    printf("2. Canviar de directori (cd)\n");
-    printf("3. Descarregar fitxer (get)\n");
-    printf("4. Descarregar carpeta (rget)\n");
-    printf("5. Registrar nou usuari\n");
-    printf("6. Sortir\n");
-    printf("Opció: ");
-    scanf("%d", &op);
-    return op;
-}
-
-void demanar_usuari_pwd(ConnectionHeader* header) {
-    printf("Usuari: ");
-    scanf("%s", header->usuari);
-    printf("Contrasenya: ");
-    scanf("%s", header->contrasenya);
-}
+// Variable global del client per recordar on es troba (Gaurdià de la memòria)
+char path_local[MAX_PATH] = "/";
 
 int main() {
-    int socket_server;
-    struct sockaddr_in server;
+    struct sockaddr_in server_addr;
     ConnectionHeader header;
-    int validacio;
     char buffer_rebut[LEN_PAQUET];
+    bool sistema_actiu = true;
 
-    // 1. Configuració del socket
-    socket_server = socket(AF_INET, SOCK_STREAM, 0);
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    server.sin_port = htons(PORT_SERVEI);
-    memset(server.sin_zero, 0, 8);
-
-    if (connect(socket_server, (struct sockaddr*)&server, sizeof(server)) < 0) {
-        perror("Error connectant al servidor");
-        return 1;
-    }
-
-    // 2. Flux principal d'operacions
+    // Demanem credencials un cop al principi
     demanar_usuari_pwd(&header);
-    int op = demanar_operacio();
 
-    header.operacio = op;
-    header.versio = 1;
+    while (sistema_actiu) {
+        int op = demanar_operacio();
+        if (op == OP_SORTIR) {
+            sistema_actiu = false;
+            break;
+        }
 
-    // 1a VEGADA: Enviem per validar usuari
-    write(socket_server, &header, sizeof(ConnectionHeader));
-    read(socket_server, &validacio, sizeof(int));
+        // --- INICI DE LA TRANSACCIÓ ---
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(PORT_SERVEI);
+        server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    if (validacio == VALID) {
-        // 2a VEGADA: Enviem per indicar l'operació real (com l'espera el bucle del servidor)
-        write(socket_server, &header, sizeof(ConnectionHeader));
+        if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            perror("Error de connexió");
+            break;
+        }
 
+        // 1. Enviar Header amb l'operació actual
+        header.operacio = op;
+        write(sock, &header, sizeof(ConnectionHeader));
+
+        // 2. Rebre validació d'usuari
+        int validacio;
+        read(sock, &validacio, sizeof(int));
+        if (validacio != VALID) {
+            printf("Error d'autenticació.\n");
+            close(sock);
+            break;
+        }
+
+        // 3. Enviar el nostre PATH ACTUAL (La nostra memòria)
+        write(sock, path_local, strlen(path_local) + 1);
+
+        // 4. Executar lògica de l'operació
         switch (op) {
         case OP_DIR: {
-            long mida_llistat;
-            // El servidor fa: write(client->getSocketCli(), &mida, sizeof(long));
-            if (read(socket_server, &mida_llistat, sizeof(long)) > 0) {
-                long total_rebut = 0;
-                while (total_rebut < mida_llistat) {
-                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut) - 1);
+            long mida;
+            if (read(sock, &mida, sizeof(long)) > 0) {
+                long rebut = 0;
+                printf("\n--- Contingut de %s (%ld bytes) ---\n", path_local, mida);
+                while (rebut < mida) {
+                    int n = read(sock, buffer_rebut, sizeof(buffer_rebut) - 1);
                     if (n <= 0) break;
                     buffer_rebut[n] = '\0';
                     printf("%s", buffer_rebut);
-                    total_rebut += n;
+                    rebut += n;
                 }
             }
             break;
         }
 
         case OP_CD: {
-            char nou_path[LEN_BUFFER];
-            printf("Introdueix el nou camí (path): ");
-            scanf("%s", nou_path);
-            // Enviem el path (el servidor l'espera dins del seu mètode op_cd)
-            write(socket_server, nou_path, strlen(nou_path));
-            printf("Petició de canvi de directori enviada.\n");
+            char nou_dir[LEN_BUFFER];
+            printf("Directori destí: ");
+            scanf("%s", nou_dir);
+            write(sock, nou_dir, strlen(nou_dir) + 1);
+
+            int ok;
+            read(sock, &ok, sizeof(int));
+            if (ok == VALID) {
+                // Actualitzem la nostra memòria local
+                if (nou_dir[0] == '/') strcpy(path_local, nou_dir);
+                else {
+                    if (strcmp(path_local, "/") != 0) strcat(path_local, "/");
+                    strcat(path_local, nou_dir);
+                }
+                printf("Directori actualitzat a: %s\n", path_local);
+            }
+            else {
+                printf("Error: El directori no existeix.\n");
+            }
             break;
         }
 
         case OP_GET: {
-            char nom_fitxer[LEN_BUFFER];
-            printf("Nom del fitxer a descarregar: ");
-            scanf("%s", nom_fitxer);
+            char fitxer[LEN_BUFFER];
+            printf("Fitxer a descarregar: ");
+            scanf("%s", fitxer);
+            write(sock, fitxer, strlen(fitxer) + 1);
 
-            write(socket_server, nom_fitxer, strlen(nom_fitxer));
-
-            long mida;
-            if (read(socket_server, &mida, sizeof(long)) <= 0 || mida < 0) {
-                printf("[ERROR] El fitxer no existeix o error al servidor.\n");
-            }
-            else {
-                int fd_desti = open(nom_fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-                long rebut = 0;
-                while (rebut < mida) {
-                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut));
-                    if (n <= 0) break;
-                    write(fd_desti, buffer_rebut, n);
-                    rebut += n;
+            long mida_f;
+            if (read(sock, &mida_f, sizeof(long)) > 0 && mida_f >= 0) {
+                int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                long total_f = 0;
+                while (total_f < mida_f) {
+                    int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
+                    write(fd, buffer_rebut, n);
+                    total_f += n;
                 }
-                close(fd_desti);
-                printf("Fitxer '%s' rebut correctament (%ld bytes).\n", nom_fitxer, mida);
+                close(fd);
+                printf("Fitxer rebut.\n");
             }
             break;
         }
-
-        case OP_RGET: {
-            char nom_dir[LEN_BUFFER];
-            printf("Nom de la carpeta a descarregar: ");
-            scanf("%s", nom_dir);
-
-            write(socket_server, nom_dir, strlen(nom_dir));
-
-            long mida_tar;
-            if (read(socket_server, &mida_tar, sizeof(long)) <= 0 || mida_tar <= 0) {
-                printf("[ERROR] No s'ha pogut baixar la carpeta.\n");
-            }
-            else {
-                int fd_temp = open("rebut.tar.gz", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-                long rebut_tar = 0;
-                while (rebut_tar < mida_tar) {
-                    int n = read(socket_server, buffer_rebut, sizeof(buffer_rebut));
-                    if (n <= 0) break;
-                    write(fd_temp, buffer_rebut, n);
-                    rebut_tar += n;
-                }
-                close(fd_temp);
-
-                // Descomprimir i netejar
-                mkdir(nom_dir, 0777);
-                char cmd[LEN_BUFFER + 64];
-                snprintf(cmd, sizeof(cmd), "tar -xzf rebut.tar.gz -C %s", nom_dir);
-                system(cmd);
-                unlink("rebut.tar.gz");
-                printf("Carpeta '%s' descarregada i descomprimida.\n", nom_dir);
-            }
-            break;
         }
 
-        case OP_SORTIR:
-            printf("Desconnectant del servidor...\n");
-            break;
-
-        default:
-            printf("Operació no implementada o desconeguda.\n");
-            break;
-        }
-
-        close(socket_server);
-        return 0;
+        // --- FINAL DE LA TRANSACCIÓ ---
+        close(sock);
     }
+
+    return 0;
 }
