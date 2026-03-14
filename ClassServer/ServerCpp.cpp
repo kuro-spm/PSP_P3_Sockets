@@ -25,6 +25,9 @@ ServerCpp::~ServerCpp()
 	pthread_mutex_destroy(&semafor_clients);
 }
 
+/// <summary>
+/// Inicializa el servidor: asegura la existencia del directorio raíz FTP, inicializa el mutex de clientes, crea y configura el socket de escucha y rellena la estructura de configuración del servidor.
+/// </summary>
 void ServerCpp::inicialitzar()
 {
 	char comanda_mkdir[128];
@@ -52,6 +55,9 @@ void ServerCpp::inicialitzar()
 	memset(config_servidor.sin_zero, 0, 8);
 }
 
+/// <summary>
+/// Inicia y ejecuta el bucle principal del servidor: enlaza el socket de escucha, pone el socket a escuchar, acepta conexiones entrantes, registra y valida clientes, y crea hilos para gestionar cada conexión. Rechaza conexiones de IP ya conectadas o cuando la tabla de clientes está llena.
+/// </summary>
 void ServerCpp::runServer() {
 	char ip_str[INET_ADDRSTRLEN];
 
@@ -121,8 +127,6 @@ void ServerCpp::stopServer()
 	}
 }
 
-
-
 void* ServerCpp::gestio_client(void* arg) {
 	ThreadArgs* args = (ThreadArgs*)arg;
 	ServerCpp* servidor = args->servidor;
@@ -165,6 +169,7 @@ void* ServerCpp::gestio_client(void* arg) {
 	cclient->tancarConnexio();
 	return NULL;
 }
+
 void ServerCpp::finalitzar_connexio_client(ConnexioClient* client)
 {
 	client->tancarConnexio();
@@ -321,34 +326,32 @@ int ServerCpp::op_get(ConnexioClient* client)
 int ServerCpp::op_rget(ConnexioClient* client)
 {
 	char nom_carpeta[LEN_BUFFER];
-	char fitxer_tar[LEN_BUFFER + 32];
+	char fitxer_tar[LEN_BUFFER + 64];
 	char comanda[LEN_PATH * 2];
 	char ruta_real_carpeta[LEN_PATH];
 	struct stat st;
 
+	// 1. Llegir nom de la carpeta
 	if (read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1) <= 0) return -1;
 	nom_carpeta[strlen(nom_carpeta)] = '\0';
 
 	if (strstr(nom_carpeta, "..")) return -1;
 
-	// Ruta real de la carpeta a comprimir
 	construir_ruta_real(client, nom_carpeta, ruta_real_carpeta);
-
-	// Nom del fitxer temporal (es crea a la carpeta d'execució del servidor, no a ftp_root)
 	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_rget_%d.tar.gz", client->getSocketCli());
 
-	// Comprimim el contingut de la ruta real
+	// 2. Comprimir
 	snprintf(comanda, sizeof(comanda), "tar -czf %s -C %s . 2>/dev/null", fitxer_tar, ruta_real_carpeta);
-
 	if (system(comanda) != 0) {
 		long error = -1;
 		write(client->getSocketCli(), &error, sizeof(long));
 		return -2;
 	}
 
+	// 3. Enviar mida i dades
 	int fd_tar = open(fitxer_tar, O_RDONLY);
 	if (fd_tar >= 0 && fstat(fd_tar, &st) == 0) {
-		long mida = st.st_size;
+		long mida = (long)st.st_size; // Forcem cast a long
 		write(client->getSocketCli(), &mida, sizeof(long));
 
 		char buffer[LEN_PAQUET];
