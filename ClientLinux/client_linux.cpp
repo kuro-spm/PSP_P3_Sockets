@@ -12,6 +12,8 @@
 #define CARPETA_DESCARREGUES "./ftpDownloads/"
 #define IP_SERVER "192.168.68.105"
 
+
+
 // Demana l'usuari i la contrasenya i els guarda al header
 void demanar_usuari_pwd(ConnectionHeader* h) {
 	printf("--- AUTENTICACIÓ ---\n");
@@ -64,7 +66,7 @@ int main() {
 		printf("S'ha creat la carpeta: %s\n", CARPETA_DESCARREGUES);
 	}
 
-	// Credencials inicials
+	// Demanar credencials a l'usuari abans de començar el bucle principal
 	demanar_usuari_pwd(&header);
 
 	while (sistema_actiu) {
@@ -98,7 +100,7 @@ int main() {
 		if (read(sock, &validacio, sizeof(int)) <= 0 || validacio != VALID) {
 			printf("Error d'autenticació o servidor tancat.\n");
 			close(sock);
-			break;
+			continue;
 		}
 
 		// 4. Executar lògica segons l'operació
@@ -205,6 +207,27 @@ int main() {
 			}
 			else {
 				printf("[!] Error: La carpeta no existeix o està buida.\n");
+			}
+			break;
+		}
+		case OP_REGISTRE: {
+			ConnectionHeader nou_usuari;
+			printf("--- REGISTRE DE NOU USUARI ---\n");
+			printf("Nou Usuari: ");
+			scanf("%s", nou_usuari.usuari);
+			printf("Nova Contrasenya: ");
+			scanf("%s", nou_usuari.contrasenya);
+
+			// Fem servir el mateix header per enviar la petició
+			nou_usuari.operacio = OP_REGISTRE;
+			strncpy(nou_usuari.path_actual, path_local, LEN_PATH);
+
+			write(sock, &nou_usuari, sizeof(ConnectionHeader));
+
+			int estat_registre;
+			if (read(sock, &estat_registre, sizeof(int)) > 0) {
+				if (estat_registre == VALID) printf("[OK] Usuari creat correctament.\n");
+				else printf("[ERROR] L'usuari ja existeix o error al servidor.\n");
 			}
 			break;
 		}

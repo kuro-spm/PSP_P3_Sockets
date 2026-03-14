@@ -31,11 +31,11 @@ ServerCpp::~ServerCpp()
 void ServerCpp::inicialitzar()
 {
 	char comanda_mkdir[128];
-    snprintf(comanda_mkdir, sizeof(comanda_mkdir), "mkdir -p %s", FTP_ROOT);
+	snprintf(comanda_mkdir, sizeof(comanda_mkdir), "mkdir -p %s", FTP_ROOT);
 
-    if (system(comanda_mkdir) != 0) {
+	if (system(comanda_mkdir) != 0) {
 		throw "[ERROR] No s'ha pogut assegurar l'existència del directori arrel";
-    }
+	}
 	//inicialitzar semàfor
 	//semafor_clients = PTHREAD_MUTEX_INITIALIZER; //fora d'un metode es faria aixi...
 	pthread_mutex_init(&semafor_clients, NULL);
@@ -161,14 +161,20 @@ void* ServerCpp::gestio_client(void* arg) {
 		case OP_CD:   servidor->op_cd(cclient);   break;
 		case OP_GET:  servidor->op_get(cclient);  break;
 		case OP_RGET: servidor->op_rget(cclient); break;
+		case OP_REGISTRE:
+			int res = servidor->registrar_usuari(header.usuari, header.contrasenya);
+			int resposta_registre = (res == 0) ? VALID : NO_VALID;
+			write(socket, &resposta_registre, sizeof(int));
+			break;
 		default: break;
 		}
 	}
-
 	// 5. FINALITZACIÓ
 	cclient->tancarConnexio();
 	return NULL;
 }
+
+
 
 void ServerCpp::finalitzar_connexio_client(ConnexioClient* client)
 {
