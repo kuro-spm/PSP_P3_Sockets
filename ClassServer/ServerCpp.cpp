@@ -136,7 +136,7 @@ void* ServerCpp::gestio_client(void* arg) {
 	int socket = cclient->getSocketCli();
 	ConnectionHeader header;
 
-	// 1. LLEGIM L'ÚNIC HEADER (Ara ja inclou el path_actual)
+	// 1. LLEGIM L'ÚNIC HEADER
 	if (read(socket, &header, sizeof(ConnectionHeader)) <= 0) {
 		cclient->tancarConnexio();
 		return NULL;
@@ -144,13 +144,15 @@ void* ServerCpp::gestio_client(void* arg) {
 
 	// 2. VALIDACIÓ D'USUARI
 	int resposta = servidor->validar_usuari(header.usuari, header.contrasenya) ? VALID : NO_VALID;
-	write(socket, &resposta, sizeof(int));
 
-	if (resposta == VALID) {
+	// Si l'operació és de registre, no validem l'usuari primer (perquè encara no existeix!)
+	// Per tant, només enviem la resposta de validació per a les altres operacions.
+	if (header.operacio != OP_REGISTRE) {
+		write(socket, &resposta, sizeof(int));
+	}
+
+	if (resposta == VALID || header.operacio == OP_REGISTRE) {
 		cclient->setUsuari(header.usuari);
-
-		// 3. ASSIGNEM EL PATH QUE JA VE DINS DEL HEADER
-		// Ja no fem read() extra, el path ja és a header.path_actual
 		cclient->setPathActual(header.path_actual);
 
 		printf("[LOG] Usuari %s a %s sol·licita OP %d\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio);
@@ -161,14 +163,18 @@ void* ServerCpp::gestio_client(void* arg) {
 		case OP_CD:   servidor->op_cd(cclient);   break;
 		case OP_GET:  servidor->op_get(cclient);  break;
 		case OP_RGET: servidor->op_rget(cclient); break;
-		case OP_REGISTRE:
+
+		case OP_REGISTRE: { 
 			int res = servidor->registrar_usuari(header.usuari, header.contrasenya);
 			int resposta_registre = (res == 0) ? VALID : NO_VALID;
 			write(socket, &resposta_registre, sizeof(int));
 			break;
+		} 
+
 		default: break;
 		}
 	}
+
 	// 5. FINALITZACIÓ
 	cclient->tancarConnexio();
 	return NULL;
