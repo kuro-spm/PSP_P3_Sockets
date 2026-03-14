@@ -10,7 +10,7 @@
 #include "../ClassServer/Dades.h"
 
 #define CARPETA_DESCARREGUES "./ftpDownloads/"
-#define IP_SERVER "192.168.68.105"
+#define IP_SERVER "127.0.0.1"
 
 // Demana l'usuari i la contrasenya i els guarda al header
 void demanar_usuari_pwd(ConnectionHeader* h) {
