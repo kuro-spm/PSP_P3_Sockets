@@ -51,8 +51,11 @@ private:
     // --- Seguretat i Validació ---
     bool existeix_usuari(const char* username);
     bool validar_usuari(const char* usr, const char* pwd);
+    void incrementar_comptador(const char* username);
     unsigned long xifrar_password(const char* password);
     void construir_ruta_real(ConnexioClient* client, const char* nom_fitxer, char* ruta_desti);
+    int get_operacions_totals(const char* username);
+
 
     // --- Funcionalitats (Comandes del Protocol) ---
     int op_dir(ConnexioClient* client);

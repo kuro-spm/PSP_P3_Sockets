@@ -156,6 +156,8 @@ void* ServerCpp::gestio_client(void* arg) {
 		cclient->setPathActual(header.path_actual);
 
 		printf("[LOG] Usuari %s a %s sol·licita OP %d\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio);
+		servidor->incrementar_comptador(header.usuari);
+		int totals = servidor->get_operacions_totals(header.usuari);
 
 		// 4. EXECUCIÓ ÚNICA
 		switch (header.operacio) {
@@ -440,31 +442,21 @@ bool ServerCpp::existeix_usuari(const char* username)
 	return trobat;
 }
 
-/// <summary>
-/// Registra un nuevo usuario: comprueba si ya existe, cifra la contraseña y la anexa al fichero de usuarios.
-/// </summary>
-/// <param name="username">Nombre de usuario a registrar.</param>
-/// <param name="password">Contraseña en texto plano; se cifra internamente antes de almacenarla.</param>
 int ServerCpp::registrar_usuari(const char* username, const char* password) {
-	if (existeix_usuari(username)) {
-		printf("[ERROR] L'usuari '%s' ja existeix.\n", username);
-		return -1;
-	}
-	pthread_mutex_lock(&semafor_clients);
+	if (existeix_usuari(username)) return -1;
 
+	pthread_mutex_lock(&semafor_clients);
 	FILE* fitxer = fopen("usuaris.txt", "a");
 	if (fitxer == NULL) {
-		perror("[ERROR] Error obrint usuaris.txt");
 		pthread_mutex_unlock(&semafor_clients);
 		return -2;
 	}
 
 	unsigned long hash_pwd = xifrar_password(password);
-	fprintf(fitxer, "%s:%lu\n", username, hash_pwd);
+	// Afegim un ":0" al final per al comptador inicial
+	fprintf(fitxer, "%s:%lu:0\n", username, hash_pwd);
 	fclose(fitxer);
 	pthread_mutex_unlock(&semafor_clients);
-
-	printf("[INFO] Usuari registrat correctament: %s\n", username);
 	return 0;
 }
 
@@ -474,6 +466,29 @@ int ServerCpp::registrar_usuari(const char* username, const char* password) {
 /// <param name="usr">Nombre de usuario a validar.</param>
 /// <param name="pwd">Contraseña en texto plano; se aplica xifrar_password y se compara el hash con el almacenado.</param>
 /// <returns>true si se encuentra una entrada con el mismo usuario y hash de contraseña; false en caso contrario o si no se puede abrir el fichero.</returns>
+//bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
+//	FILE* fitxer = fopen("usuaris.txt", "r");
+//	if (fitxer == NULL) return false;
+//
+//	char linia[128];
+//	char usr_fitxer[LEN_USUARI + 1];
+//	unsigned long pwd_fitxer;
+//	bool trobat = false;
+//
+//	unsigned long hash_rebut = xifrar_password(pwd);
+//
+//	while (fgets(linia, sizeof(linia), fitxer)) {
+//		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
+//			if (strcmp(usr, usr_fitxer) == 0 && hash_rebut == pwd_fitxer) {
+//				trobat = true;
+//				break;
+//			}
+//		}
+//	}
+//	fclose(fitxer);
+//	return trobat;
+//}
+
 bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
 	FILE* fitxer = fopen("usuaris.txt", "r");
 	if (fitxer == NULL) return false;
@@ -481,12 +496,14 @@ bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
 	char linia[128];
 	char usr_fitxer[LEN_USUARI + 1];
 	unsigned long pwd_fitxer;
+	int comptador_fitxer; // Afegim variable per llegir el 3r camp
 	bool trobat = false;
 
 	unsigned long hash_rebut = xifrar_password(pwd);
 
 	while (fgets(linia, sizeof(linia), fitxer)) {
-		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
+		// Ara busquem 3 valors: usuari, hash i comptador
+		if (sscanf(linia, "%[^:]:%lu:%d", usr_fitxer, &pwd_fitxer, &comptador_fitxer) == 3) {
 			if (strcmp(usr, usr_fitxer) == 0 && hash_rebut == pwd_fitxer) {
 				trobat = true;
 				break;
@@ -495,6 +512,39 @@ bool ServerCpp::validar_usuari(const char* usr, const char* pwd) {
 	}
 	fclose(fitxer);
 	return trobat;
+}
+
+void ServerCpp::incrementar_comptador(const char* username) {
+	pthread_mutex_lock(&semafor_clients);
+	FILE* fitxer = fopen("usuaris.txt", "r");
+	FILE* temp = fopen("usuaris.tmp", "w");
+
+	if (fitxer == NULL || temp == NULL) {
+		if (fitxer) fclose(fitxer);
+		if (temp) fclose(temp);
+		pthread_mutex_unlock(&semafor_clients);
+		return;
+	}
+
+	char linia[128];
+	char u[LEN_USUARI];
+	unsigned long h;
+	int comptador;
+
+	while (fgets(linia, sizeof(linia), fitxer)) {
+		// Llegim els 3 camps
+		if (sscanf(linia, "%[^:]:%lu:%d", u, &h, &comptador) == 3) {
+			if (strcmp(u, username) == 0) {
+				comptador++; // Incrementem si és l'usuari actual
+			}
+			fprintf(temp, "%s:%lu:%d\n", u, h, comptador);
+		}
+	}
+
+	fclose(fitxer);
+	fclose(temp);
+	rename("usuaris.tmp", "usuaris.txt"); // Substituïm el vell pel nou
+	pthread_mutex_unlock(&semafor_clients);
 }
 
 //********************** Altres mètodes auxiliars **********************/
@@ -513,4 +563,25 @@ void ServerCpp::construir_ruta_real(ConnexioClient* client, const char* nom_fitx
 	else {
 		snprintf(ruta_desti, LEN_PATH, "%s%s/%s", FTP_ROOT, client->getPathActual(), nom_fitxer);
 	}
+}
+
+int ServerCpp::get_operacions_totals(const char* username) {
+	FILE* fitxer = fopen("usuaris.txt", "r");
+	if (fitxer == NULL) return 0;
+
+	char linia[128];
+	char u[LEN_USUARI];
+	unsigned long h;
+	int comptador = 0;
+
+	while (fgets(linia, sizeof(linia), fitxer)) {
+		if (sscanf(linia, "%[^:]:%lu:%d", u, &h, &comptador) == 3) {
+			if (strcmp(u, username) == 0) {
+				fclose(fitxer);
+				return comptador;
+			}
+		}
+	}
+	fclose(fitxer);
+	return 0;
 }

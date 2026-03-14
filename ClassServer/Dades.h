@@ -21,7 +21,7 @@ enum CodisOperacio {
 	OP_GET = 3,
 	OP_RGET = 4,
 	OP_REGISTRE = 5,
-	OP_SORTIR = 6,
+	OP_SORTIR = 99,
 	NUM_OPERACIONS // Aquest valor no s'utilitza com a operació real, sinó com a límit superior (té valor de l'ultim+1)
 };
 
