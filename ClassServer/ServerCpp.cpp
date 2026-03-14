@@ -164,12 +164,12 @@ void* ServerCpp::gestio_client(void* arg) {
 		case OP_GET:  servidor->op_get(cclient);  break;
 		case OP_RGET: servidor->op_rget(cclient); break;
 
-		case OP_REGISTRE: { 
+		case OP_REGISTRE: {
 			int res = servidor->registrar_usuari(header.usuari, header.contrasenya);
 			int resposta_registre = (res == 0) ? VALID : NO_VALID;
 			write(socket, &resposta_registre, sizeof(int));
 			break;
-		} 
+		}
 
 		default: break;
 		}
@@ -430,9 +430,10 @@ bool ServerCpp::existeix_usuari(const char* username)
 	bool trobat = false;
 	while (fgets(linia, sizeof(linia), fitxer)) {
 		if (sscanf(linia, "%[^:]:%lu", usr_fitxer, &pwd_fitxer) == 2) {
-			if (strcmp(username, usr_fitxer) == 0)
+			if (strcmp(username, usr_fitxer) == 0) {
 				trobat = true;
-			break;
+				break;
+			}
 		}
 	}
 	fclose(fitxer);
