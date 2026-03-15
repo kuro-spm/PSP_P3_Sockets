@@ -155,9 +155,9 @@ void* ServerCpp::gestio_client(void* arg) {
 		cclient->setUsuari(header.usuari);
 		cclient->setPathActual(header.path_actual);
 
-		printf("[LOG] Usuari %s a %s sol·licita OP %d\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio);
 		servidor->incrementar_comptador(header.usuari);
 		int totals = servidor->get_operacions_totals(header.usuari);
+		printf("[LOG] Usuari %s a %s sol·licita OP %d (Operacions totals: %d)\n", cclient->getUsuari(), cclient->getPathActual(), header.operacio, totals);
 
 		// 4. EXECUCIÓ ÚNICA
 		switch (header.operacio) {

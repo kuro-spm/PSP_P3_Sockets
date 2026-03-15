@@ -9,8 +9,9 @@
 #include <stdlib.h>   
 #include "../ClassServer/Dades.h"
 
-#define CARPETA_DESCARREGUES "./ftpDownloads/"
-#define IP_SERVER "127.0.0.1"
+#define CARPETA_DESCARREGUES "./ftpDownloads"
+//define IP_SERVER "127.0.0.1"
+#define IP_SERVER "192.168.68.109"
 
 
 
@@ -34,12 +35,12 @@ int demanar_operacio() {
 	printf("%d. Canviar directori (cd)\n", OP_CD);
 	printf("%d. Descarregar fitxer (get)\n", OP_GET);
 	printf("%d. Descarregar carpeta (rget)\n", OP_RGET);
-	printf("%d. Registrar nou usuari\n", OP_REGISTRE);
+	//printf("%d. Registrar nou usuari\n", OP_REGISTRE); 
 	printf("%d. Sortir\n", OP_SORTIR);
 	printf("Opcio: ");
 
 	if (scanf("%d", &opcio) != 1) {
-		// Neteja del buffer en cas d'introduir lletres
+		//Futura implementació: Acceptar també les operacions com a text (ls, cd, get, rget, registre, sortir)
 		while (getchar() != '\n');
 		return -1;
 	}
@@ -55,15 +56,22 @@ int main() {
 	char buffer_rebut[LEN_PAQUET];
 	bool sistema_actiu = true;
 
-	// 0. Crear la carpeta de descarregues si no existeix
-	struct stat st = { 0 };
-	if (stat(CARPETA_DESCARREGUES, &st) == -1) {
-#ifdef _WIN32
-		mkdir(CARPETA_DESCARREGUES);
-#else
-		mkdir(CARPETA_DESCARREGUES, 0777);
-#endif
-		printf("S'ha creat la carpeta: %s\n", CARPETA_DESCARREGUES);
+	// --- 0. CREACIÓ DE LA CARPETA ---
+	char comanda_mkdir[128];
+	snprintf(comanda_mkdir, sizeof(comanda_mkdir), "mkdir -p %s", CARPETA_DESCARREGUES);
+
+	if (system(comanda_mkdir) != 0) {
+		fprintf(stderr, "[ERROR] No s'ha pogut crear la carpeta de descàrregues %s\n", CARPETA_DESCARREGUES);
+		return 1;
+	}
+	else {
+		printf("[INFO] Carpeta de descàrregues a punt: %s\n", CARPETA_DESCARREGUES);
+	}
+
+	// Entrem a la carpeta per treballar-hi dins
+	if (chdir(CARPETA_DESCARREGUES) != 0) {
+		perror("[ERROR] No s'ha pogut accedir al directori de descàrregues");
+		return 1;
 	}
 
 	// Demanar credencials a l'usuari abans de començar el bucle principal
@@ -152,9 +160,10 @@ int main() {
 
 			long mida_f;
 			if (read(sock, &mida_f, sizeof(long)) > 0 && mida_f >= 0) {
-				snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", CARPETA_DESCARREGUES, fitxer);
+				//snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", CARPETA_DESCARREGUES, fitxer);
 
-				int fd = open(ruta_completa, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+				//int fd = open(ruta_completa, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+				int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				if (fd < 0) {
 					perror("Error al crear el fitxer local");
 					break;
@@ -168,7 +177,7 @@ int main() {
 					total_f += n;
 				}
 				close(fd);
-				printf("Fitxer descarregat correctament a: %s\n", ruta_completa);
+				printf("Fitxer descarregat correctament a: %s\n", CARPETA_DESCARREGUES);
 			}
 			else {
 				printf("Error: El fitxer no existeix al servidor.\n");
