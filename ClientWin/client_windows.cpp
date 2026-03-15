@@ -1,18 +1,244 @@
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>    
+#include <sys/stat.h> 
+#include <stdlib.h>   
+#include <io.h>             // Per a open(), read(), write() en Windows
 #include "../ClassServer/Dades.h"
 
-#include <iostream>
+// --- LLIBRERIES ESPECÍFIQUES DE WINDOWS ---
+#include <winsock2.h>       // La base dels sockets en Windows
+#include <ws2tcpip.h>       // Per a inet_pton i estructures modernes
+#include <direct.h>         // Per a _mkdir() i _chdir()
 
-int main()
-{
-    std::cout << "Hello World!\n";
+// Windows: Enllaçar la llibreria de sistema ws2_32
+#pragma comment(lib, "ws2_32.lib")
+
+#define CARPETA_DESCARREGUES "./ftpDownloads"
+#define IP_SERVER "192.168.68.109"
+
+// Demana l'usuari i la contrasenya
+void demanar_usuari_pwd(ConnectionHeader* h) {
+    printf("--- AUTENTICACIÓ (WINDOWS CLIENT) ---\n");
+    printf("Usuari: ");
+    scanf("%s", h->usuari);
+    printf("Contrasenya: ");
+    scanf("%s", h->contrasenya);
+    h->versio = 1;
+    strncpy(h->path_actual, "/", LEN_PATH - 1);
 }
 
-// Ejecutar programa: Ctrl + F5 o menú Depurar > Iniciar sin depurar
-// Depurar programa: F5 o menú Depurar > Iniciar depuración
+// Menú d'operacions
+int demanar_operacio() {
+    int opcio;
+    printf("\nSELECCIONA UNA OPERACIÓ:\n");
+    printf("%d. Llistar fitxers (ls)\n", OP_DIR);
+    printf("%d. Canviar directori (cd)\n", OP_CD);
+    printf("%d. Descarregar fitxer (get)\n", OP_GET);
+    printf("%d. Descarregar carpeta (rget)\n", OP_RGET);
+    printf("%d. Sortir\n", OP_SORTIR);
+    printf("Opcio: ");
 
-// Sugerencias para primeros pasos: 1. Use la ventana del Explorador de soluciones para agregar y administrar archivos
-//   2. Use la ventana de Team Explorer para conectar con el control de código fuente
-//   3. Use la ventana de salida para ver la salida de compilación y otros mensajes
-//   4. Use la ventana Lista de errores para ver los errores
-//   5. Vaya a Proyecto > Agregar nuevo elemento para crear nuevos archivos de código, o a Proyecto > Agregar elemento existente para agregar archivos de código existentes al proyecto
-//   6. En el futuro, para volver a abrir este proyecto, vaya a Archivo > Abrir > Proyecto y seleccione el archivo .sln
+    if (scanf("%d", &opcio) != 1) {
+        while (getchar() != '\n');
+        return -1;
+    }
+    return opcio;
+}
+
+char path_local[LEN_PATH] = "/";
+
+int main() {
+    struct sockaddr_in server_addr;
+    ConnectionHeader header;
+    char buffer_rebut[LEN_PAQUET];
+    bool sistema_actiu = true;
+
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);       
+
+    // --- 1. INICIALITZACIÓ WINSOCK (OBLIGATORI A WINDOWS) ---
+    WSADATA wsaData;
+    // Linux: No existeix
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        printf("Error a WSAStartup\n");
+        return 1;
+    }
+
+    // --- 2. GESTIÓ DE CARPETES ---
+    // Linux: system("mkdir -p ...");
+    // Windows: _mkdir (no accepta el flag -p directament)
+    _mkdir(CARPETA_DESCARREGUES);
+
+    // Linux: chdir()
+    // Windows: _chdir()
+    if (_chdir(CARPETA_DESCARREGUES) != 0) {
+        perror("[ERROR] No s'ha pogut accedir al directori");
+        WSACleanup();
+        return 1;
+    }
+
+    printf("[INFO] Client Windows a punt a: %s\n", CARPETA_DESCARREGUES);
+    demanar_usuari_pwd(&header);
+
+    while (sistema_actiu) {
+        int op = demanar_operacio();
+        if (op == OP_SORTIR) {
+            sistema_actiu = false;
+            break;
+        }
+
+        // --- INICI DE LA TRANSACCIÓ ---
+        // Linux: int sock
+        // Windows: SOCKET sock
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(PORT_SERVEI);
+        server_addr.sin_addr.s_addr = inet_addr(IP_SERVER);
+
+        if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            perror("Error de connexió");
+            continue;
+        }
+
+        header.operacio = op;
+        strncpy(header.path_actual, path_local, LEN_PATH - 1);
+        header.path_actual[LEN_PATH - 1] = '\0';
+
+        // --- ENVIAR HEADER ---
+        // Linux: write(sock, &header, sizeof(header));
+        // Windows: send(sock, ...)
+        send(sock, (const char*)&header, sizeof(ConnectionHeader), 0);
+
+        // --- REBRE VALIDACIÓ ---
+        int validacio;
+        // Linux: if (read(sock, &validacio, sizeof(int)) <= 0...
+        // Windows: if (recv(sock, (char*)&validacio...
+        if (recv(sock, (char*)&validacio, sizeof(int), 0) <= 0 || validacio != VALID) {
+            printf("Error d'autenticació o servidor tancat.\n");
+            closesocket(sock); // Linux: close(sock);
+            continue;
+        }
+
+        switch (op) {
+        case OP_DIR: {
+            long long mida;
+            // Rebem la mida (8 bytes)
+            if (recv(sock, (char*)&mida, sizeof(mida), 0) > 0) {
+                long long rebut = 0;
+                printf("\n--- Contingut de %s (%lld bytes) ---\n", path_local, mida);
+
+                while (rebut < mida) {
+                    // Netegem el buffer abans de rebre
+                    memset(buffer_rebut, 0, sizeof(buffer_rebut));
+                    int n = recv(sock, buffer_rebut, sizeof(buffer_rebut) - 1, 0);
+                    if (n <= 0) break;
+                    buffer_rebut[n] = '\0';
+                    printf("%s", buffer_rebut);
+                    rebut += n;
+                }
+                printf("\n"); // Un salt de línia extra per seguretat
+            }
+            break;
+        }
+
+        case OP_CD: {
+            char nou_dir[LEN_BUFFER];
+            printf("Directori destí: ");
+            scanf("%s", nou_dir);
+            send(sock, nou_dir, (int)strlen(nou_dir) + 1, 0);
+
+            int ok;
+            recv(sock, (char*)&ok, sizeof(int), 0);
+            if (ok == VALID) {
+                if (nou_dir[0] == '/') strcpy(path_local, nou_dir);
+                else {
+                    if (strcmp(path_local, "/") != 0) strcat(path_local, "/");
+                    strcat(path_local, nou_dir);
+                }
+                printf("Directori actualitzat: %s\n", path_local);
+            }
+            else {
+                printf("Error: El servidor no troba el directori.\n");
+            }
+            break;
+        }
+
+        case OP_GET: {
+            char fitxer[LEN_BUFFER];
+            printf("Fitxer a descarregar: ");
+            scanf("%s", fitxer);
+            send(sock, fitxer, (int)strlen(fitxer) + 1, 0);
+
+            long mida_f;
+            if (recv(sock, (char*)&mida_f, sizeof(long), 0) > 0 && mida_f >= 0) {
+                // Windows: _open amb flags de compatibilitat
+                int fd = _open(fitxer, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, 0666);
+                if (fd < 0) {
+                    perror("Error al crear el fitxer local");
+                    break;
+                }
+
+                long total_f = 0;
+                while (total_f < mida_f) {
+                    int n = recv(sock, buffer_rebut, sizeof(buffer_rebut), 0);
+                    if (n <= 0) break;
+                    _write(fd, buffer_rebut, n);
+                    total_f += n;
+                }
+                _close(fd);
+                printf("[OK] Fitxer descarregat a la carpeta ftpDownloads.\n");
+            }
+            else {
+                printf("Error: El fitxer no existeix al servidor.\n");
+            }
+            break;
+        }
+
+        case OP_RGET: {
+            char nom_dir[LEN_BUFFER];
+            printf("Carpeta a descarregar: ");
+            scanf("%s", nom_dir);
+            send(sock, nom_dir, (int)strlen(nom_dir) + 1, 0);
+
+            long mida_tar;
+            if (recv(sock, (char*)&mida_tar, sizeof(long), 0) > 0 && mida_tar > 0) {
+                printf("[+] Rebent carpeta (%ld bytes)... ", mida_tar);
+
+                int fd_temp = _open("rebut.tar.gz", _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, 0666);
+                long total_rebut = 0;
+                while (total_rebut < mida_tar) {
+                    int n = recv(sock, buffer_rebut, sizeof(buffer_rebut), 0);
+                    if (n <= 0) break;
+                    _write(fd_temp, buffer_rebut, n);
+                    total_rebut += n;
+                }
+                _close(fd_temp);
+
+                _mkdir(nom_dir);
+                // Nota: Per descomprimir en Windows necessites tenir instal·lat 'tar' 
+                char cmd[LEN_BUFFER + 64];
+                snprintf(cmd, sizeof(cmd), "tar -xzf rebut.tar.gz -C %s", nom_dir);
+                system(cmd);
+                _unlink("rebut.tar.gz");
+                printf("OK\n");
+            }
+            else {
+                printf("[!] Error: La carpeta no existeix o està buida.\n");
+            }
+            break;
+        }
+        }
+
+        // --- FINAL DE LA TRANSACCIÓ ---
+        // Linux: close(sock);
+        closesocket(sock);
+    }
+
+    // --- TANCAR WINSOCK ---
+    WSACleanup();
+    return 0;
+}

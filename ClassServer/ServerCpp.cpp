@@ -252,9 +252,9 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 	int fd = open(nom_fitxer_temporal, O_RDONLY);
 	if (fd >= 0) {
 		if (fstat(fd, &st) == 0) {
-			long mida = st.st_size;
+			long long mida = (long long) st.st_size;
 			// Enviem la mida (8 bytes) perquè el client sàpiga quant llegir
-			write(client->getSocketCli(), &mida, sizeof(long));
+			write(client->getSocketCli(), &mida, sizeof(long long));
 
 			ssize_t n;
 			while ((n = read(fd, buffer, sizeof(buffer))) > 0) {

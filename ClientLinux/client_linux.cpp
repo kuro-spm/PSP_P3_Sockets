@@ -122,9 +122,9 @@ int main() {
 		// 4. Executar lògica segons l'operació
 		switch (op) {
 		case OP_DIR: {
-			long mida;
-			if (read(sock, &mida, sizeof(long)) > 0) {
-				long rebut = 0;
+			long long mida;
+			if (read(sock, &mida, sizeof(mida)) > 0) {
+				long long rebut = 0;
 				printf("\n--- Contingut de %s (%ld bytes) ---\n", path_local, mida);
 				while (rebut < mida) {
 					int n = read(sock, buffer_rebut, sizeof(buffer_rebut) - 1);
