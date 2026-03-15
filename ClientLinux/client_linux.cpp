@@ -138,7 +138,8 @@ int main() {
 		}
 
 		case OP_CD: {
-			char nou_dir[LEN_BUFFER];
+			char nou_dir[LEN_PATH];
+			memset(nou_dir, 0, LEN_PATH); // Netegem a zero tota la memòria
 			printf("Directori destí: ");
 			scanf("%s", nou_dir);
 			write(sock, nou_dir, strlen(nou_dir) + 1);
@@ -198,9 +199,10 @@ int main() {
 
 		case OP_RGET: {
 			char nom_dir[LEN_BUFFER];
+			memset(nom_dir, 0, LEN_BUFFER);
 			printf("Nom de la carpeta a descarregar: ");
 			scanf("%s", nom_dir);
-			write(sock, nom_dir, strlen(nom_dir) + 1);
+			write(sock, nom_dir, LEN_BUFFER);
 
 			long long mida_tar;
 			if (read(sock, &mida_tar, sizeof(mida_tar)) > 0 && mida_tar > 0) {
