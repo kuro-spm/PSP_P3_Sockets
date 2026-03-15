@@ -74,6 +74,14 @@ int main() {
 		return 1;
 	}
 
+	//char cwd[1024];
+	//if (getcwd(cwd, sizeof(cwd)) != NULL) {
+	//	printf("[DEBUG] La ruta absoluta és: %s\n", cwd);
+	//}
+	//else {
+	//	perror("getcwd() error");
+	//}
+
 	// Demanar credencials a l'usuari abans de començar el bucle principal
 	demanar_usuari_pwd(&header);
 
@@ -153,16 +161,12 @@ int main() {
 
 		case OP_GET: {
 			char fitxer[LEN_BUFFER];
-			char ruta_completa[512];
 			printf("Fitxer a descarregar: ");
 			scanf("%s", fitxer);
 			write(sock, fitxer, strlen(fitxer) + 1);
 
 			long mida_f;
 			if (read(sock, &mida_f, sizeof(long)) > 0 && mida_f >= 0) {
-				//snprintf(ruta_completa, sizeof(ruta_completa), "%s%s", CARPETA_DESCARREGUES, fitxer);
-
-				//int fd = open(ruta_completa, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				if (fd < 0) {
 					perror("Error al crear el fitxer local");
@@ -177,7 +181,14 @@ int main() {
 					total_f += n;
 				}
 				close(fd);
-				printf("Fitxer descarregat correctament a: %s\n", CARPETA_DESCARREGUES);
+
+				char ruta_real[1024];
+				if (getcwd(ruta_real, sizeof(ruta_real)) != NULL) {
+					printf("[OK] Fitxer descarregat a: %s/%s\n", ruta_real, fitxer);
+				}
+				else {
+					printf("[OK] Fitxer descarregat correctament.\n");
+				}
 			}
 			else {
 				printf("Error: El fitxer no existeix al servidor.\n");
@@ -192,7 +203,6 @@ int main() {
 			write(sock, nom_dir, strlen(nom_dir) + 1);
 
 			long mida_tar;
-			// LLEGIR MIDA (AQUÍ ÉS ON FALLAVA)
 			if (read(sock, &mida_tar, sizeof(long)) > 0 && mida_tar > 0) {
 				printf("[+] Rebent carpeta (%ld bytes)... ", mida_tar);
 
@@ -206,40 +216,47 @@ int main() {
 				}
 				close(fd_temp);
 
-				// Descomprimir
 				mkdir(nom_dir, 0777);
 				char cmd[LEN_BUFFER + 64];
 				snprintf(cmd, sizeof(cmd), "tar -xzf rebut.tar.gz -C %s 2>/dev/null", nom_dir);
 				system(cmd);
 				unlink("rebut.tar.gz");
-				printf("OK\n");
+
+				// --- NOU MISSATGE AMB RUTA ABSOLUTA ---
+				char ruta_real[1024];
+				if (getcwd(ruta_real, sizeof(ruta_real)) != NULL) {
+					printf("OK (Guardat a: %s/%s)\n", ruta_real, nom_dir);
+				}
+				else {
+					printf("OK\n");
+				}
 			}
 			else {
 				printf("[!] Error: La carpeta no existeix o està buida.\n");
 			}
 			break;
 		}
-		case OP_REGISTRE: {
-			ConnectionHeader nou_usuari;
-			printf("--- REGISTRE DE NOU USUARI ---\n");
-			printf("Nou Usuari: ");
-			scanf("%s", nou_usuari.usuari);
-			printf("Nova Contrasenya: ");
-			scanf("%s", nou_usuari.contrasenya);
+		//case OP_REGISTRE: {
+		//	ConnectionHeader nou_usuari;
+		//	printf("--- REGISTRE DE NOU USUARI ---\n");
+		//	printf("Nou Usuari: ");
+		//	scanf("%s", nou_usuari.usuari);
+		//	printf("Nova Contrasenya: ");
+		//	scanf("%s", nou_usuari.contrasenya);
 
-			// Fem servir el mateix header per enviar la petició
-			nou_usuari.operacio = OP_REGISTRE;
-			strncpy(nou_usuari.path_actual, path_local, LEN_PATH);
+		//	// Fem servir el mateix header per enviar la petició
+		//	nou_usuari.operacio = OP_REGISTRE;
+		//	strncpy(nou_usuari.path_actual, path_local, LEN_PATH);
 
-			write(sock, &nou_usuari, sizeof(ConnectionHeader));
+		//	write(sock, &nou_usuari, sizeof(ConnectionHeader));
 
-			int estat_registre;
-			if (read(sock, &estat_registre, sizeof(int)) > 0) {
-				if (estat_registre == VALID) printf("[OK] Usuari creat correctament.\n");
-				else printf("[ERROR] L'usuari ja existeix o error al servidor.\n");
-			}
-			break;
-		}
+		//	int estat_registre;
+		//	if (read(sock, &estat_registre, sizeof(int)) > 0) {
+		//		if (estat_registre == VALID) printf("[OK] Usuari creat correctament.\n");
+		//		else printf("[ERROR] L'usuari ja existeix o error al servidor.\n");
+		//	}
+		//	break;
+		//}
 		}
 
 		// --- FINAL DE LA TRANSACCIÓ ---
