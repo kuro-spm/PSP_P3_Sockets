@@ -63,6 +63,10 @@ int main() {
         return 1;
     }
 
+    char ruta_verificacio[1024];
+    getcwd(ruta_verificacio, sizeof(ruta_verificacio));
+    printf("[SISTEMA] Estàs treballant a: %s\n", ruta_verificacio);
+
     demanar_usuari_pwd(&header);
 
     while (sistema_actiu) {
