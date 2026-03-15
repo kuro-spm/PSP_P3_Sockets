@@ -146,13 +146,18 @@ int main() {
 		}
 
 		case OP_CD: {
-			char nou_dir[LEN_PATH]; memset(nou_dir, 0, LEN_PATH);
-			printf("Destí: "); scanf("%s", nou_dir);
-			send(sock, nou_dir, LEN_PATH, 0); // Enviem bloc fix per sincronitzar
+			char nou_dir[LEN_PATH];
+			memset(nou_dir, 0, LEN_PATH);
+			printf("Destí: ");
+			scanf("%s", nou_dir);
 
-			int ok; recv(sock, (char*)&ok, sizeof(int), 0);
+			// Enviem el bloc fix de 256 bytes per sincronitzar el servidor
+			send(sock, nou_dir, LEN_PATH, 0);
+
+			int ok;
+			recv(sock, (char*)&ok, sizeof(int), 0);
 			if (ok == VALID) {
-				// Sincronitzem el path_local segons el que hem enviat
+				// Actualitzem la ruta visual local
 				if (strcmp(nou_dir, "..") == 0) {
 					char* barra = strrchr(path_local, '/');
 					if (barra != path_local) *barra = '\0'; else strcpy(path_local, "/");
@@ -162,71 +167,30 @@ int main() {
 					strcat(path_local, nou_dir);
 				}
 			}
-			else printf("Error de directori.\n");
+			else printf("Error: Accés denegat o directori inexistent.\n");
 			break;
 		}
 
 		case OP_GET: {
 			char fitxer[LEN_BUFFER];
-			printf("Fitxer a descarregar: ");
-			scanf("%s", fitxer);
-			send(sock, fitxer, (int)strlen(fitxer) + 1, 0);
+			memset(fitxer, 0, LEN_BUFFER);
+			printf("Fitxer: "); scanf("%s", fitxer);
+			send(sock, fitxer, LEN_BUFFER, 0);
 
 			long long mida_f;
-			if (recv(sock, (char*)&mida_f, sizeof(mida_f), 0) > 0 && mida_f >= 0) {
-				// Windows: _open amb flags de compatibilitat
+			if (recv(sock, (char*)&mida_f, sizeof(long long), 0) > 0 && mida_f >= 0) {
 				int fd = _open(fitxer, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, 0666);
-				if (fd < 0) {
-					perror("Error al crear el fitxer local");
-					break;
-				}
-
-				long long total_f = 0;
-				while (total_f < mida_f) {
+				long long r = 0;
+				while (r < mida_f) {
 					int n = recv(sock, buffer_rebut, sizeof(buffer_rebut), 0);
 					if (n <= 0) break;
 					_write(fd, buffer_rebut, n);
-					total_f += n;
+					r += n;
 				}
 				_close(fd);
-
-				char ruta_abs[1024];
-				if (_getcwd(ruta_abs, sizeof(ruta_abs)) != NULL) {
-					printf("[OK] Fitxer descarregat a: %s\\%s\n", ruta_abs, fitxer);
-				}
+				printf("[OK] Descarregat.\n");
 			}
-			else {
-				printf("Error: El fitxer no existeix al servidor.\n");
-			}
-			break;
-		}
-
-		case OP_RGET: {
-			char nom_dir[LEN_BUFFER];
-			printf("Carpeta a descarregar: ");
-			scanf("%s", nom_dir);
-			send(sock, nom_dir, LEN_BUFFER, 0);
-
-			long long mida_tar; // 8 BYTES
-			if (recv(sock, (char*)&mida_tar, sizeof(long long), 0) > 0 && mida_tar > 0) {
-				int fd_temp = _open("rebut.tar.gz", _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, 0666);
-				long long total_rebut = 0;
-				while (total_rebut < mida_tar) {
-					int n = recv(sock, buffer_rebut, sizeof(buffer_rebut), 0);
-					if (n <= 0) break;
-					_write(fd_temp, buffer_rebut, n);
-					total_rebut += n;
-				}
-				_close(fd_temp);
-
-				_mkdir(nom_dir);
-				// El comandament 'tar' de Windows és exigent amb les rutes
-				char cmd[512];
-				sprintf(cmd, "tar -xzf rebut.tar.gz -C %s", nom_dir);
-				system(cmd);
-				_unlink("rebut.tar.gz");
-				printf("[OK] Carpeta descomprimida correctament.\n");
-			}
+			else printf("Error: El fitxer no existeix.\n");
 			break;
 		}
 		}

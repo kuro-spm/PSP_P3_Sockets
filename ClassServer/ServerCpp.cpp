@@ -275,136 +275,95 @@ void ServerCpp::op_cd(ConnexioClient* client) {
 	char ruta_desti_provisional[LEN_PATH];
 	char ruta_absoluta_final[PATH_MAX];
 	char ruta_arrel_absoluta[PATH_MAX];
-	int resposta;
+	int resposta = NO_VALID;
 
-	// 1. Llegim el directori destí que ens envia el client
+	// 1. Llegim el bloc fix de 256 bytes per netejar el socket
 	memset(nou_dir, 0, LEN_PATH);
 	if (read(client->getSocketCli(), nou_dir, LEN_PATH) <= 0) return;
 
-	// 2. Construïm la ruta on l'usuari vol anar (ROOT + PATH_ACTUAL + NOU_DIR)
+	// 2. Resoldre rutes per seguretat
 	construir_ruta_real(client, nou_dir, ruta_desti_provisional);
-
-	// 3. Obtenim la ruta absoluta de l'arrel de la pràctica per comparar
 	realpath(FTP_ROOT, ruta_arrel_absoluta);
 
-	// 4. Intentem resoldre la ruta destí amb realpath()
-	// Si realpath retorna NULL, és que la ruta ni tan sols existeix
-	if (realpath(ruta_desti_provisional, ruta_absoluta_final) == NULL) {
-		resposta = NO_VALID;
-		printf("[SEGURETAT] Intent de CD a ruta inexistent: %s\n", nou_dir);
-	}
-	else {
-		// 5. COMPROVACIÓ CRÍTICA: Comença la ruta final per la ruta de l'arrel?
-		// Això impedeix que facin "cd ../../../" i surtin al sistema real
+	if (realpath(ruta_desti_provisional, ruta_absoluta_final) != NULL) {
+		// 3. Comprovar que no surti de l'arrel (Opció B)
 		if (strncmp(ruta_absoluta_final, ruta_arrel_absoluta, strlen(ruta_arrel_absoluta)) == 0) {
-
-			// Si és segur, fem el chdir físic
-			if (chdir(ruta_absoluta_final) == 0) {
-				resposta = VALID;
-
-				// Actualitzem el path virtual del client (traient la part del FTP_ROOT)
-				// Això serveix perquè el següent 'ls' sàpiga on és
-				const char* path_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
-				if (strlen(path_relatiu) == 0) client->setPathActual("/");
-				else client->setPathActual(path_relatiu);
-
-				printf("[OK] CD permès a: %s\n", ruta_absoluta_final);
-			}
-			else {
-				resposta = NO_VALID;
-			}
+			// 4. Actualitzem el path virtual del client
+			const char* p_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
+			client->setPathActual(strlen(p_relatiu) == 0 ? "/" : p_relatiu);
+			resposta = VALID;
+			printf("[OK] CD a: %s\n", ruta_absoluta_final);
 		}
 		else {
-			// L'usuari ha intentat sortir de la carpeta de la pràctica!
-			resposta = NO_VALID;
-			printf("[ALERTA SEGURETAT] Intent de sortir de l'arrel: %s\n", ruta_absoluta_final);
+			printf("[ALERTA] Intent de fuga: %s\n", ruta_absoluta_final);
 		}
 	}
 
-	// 6. Enviem el resultat al client
+	// 5. Enviem la resposta (4 bytes)
 	write(client->getSocketCli(), &resposta, sizeof(int));
 }
 
-
-int ServerCpp::op_get(ConnexioClient* client)
-{
+int ServerCpp::op_get(ConnexioClient* client) {
 	char nom_fitxer[LEN_BUFFER];
 	char ruta_real[LEN_PATH];
 	char buffer[LEN_PAQUET];
 	struct stat st;
 
-	if (read(client->getSocketCli(), nom_fitxer, sizeof(nom_fitxer) - 1) <= 0) return -1;
-	nom_fitxer[strlen(nom_fitxer)] = '\0';
+	memset(nom_fitxer, 0, LEN_BUFFER);
+	if (read(client->getSocketCli(), nom_fitxer, LEN_BUFFER) <= 0) return -1;
 
-	// Seguretat contra ".."
-	if (strstr(nom_fitxer, "..")) return -1;
-
-	// Convertim la petició del client en una ruta real al servidor
 	construir_ruta_real(client, nom_fitxer, ruta_real);
+	int fd = open(ruta_real, O_RDONLY);
 
-	int fd_fitxer = open(ruta_real, O_RDONLY);
-	if (fd_fitxer < 0) {
-		long error = -1;
-		write(client->getSocketCli(), &error, sizeof(long));
+	if (fd < 0) {
+		long long error = -1; // Enviem error en 8 bytes
+		write(client->getSocketCli(), &error, sizeof(long long));
 		return -2;
 	}
 
-	fstat(fd_fitxer, &st);
-	long mida = st.st_size;
-	write(client->getSocketCli(), &mida, sizeof(long));
+	fstat(fd, &st);
+	long long mida_gran = (long long)st.st_size; // UNIFICAT A 8 BYTES
+	write(client->getSocketCli(), &mida_gran, sizeof(long long));
 
-	ssize_t llegits;
-	while ((llegits = read(fd_fitxer, buffer, sizeof(buffer))) > 0) {
-		write(client->getSocketCli(), buffer, llegits);
+	ssize_t n;
+	while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+		write(client->getSocketCli(), buffer, n);
 	}
-
-	close(fd_fitxer);
+	close(fd);
 	return 0;
 }
 
-int ServerCpp::op_rget(ConnexioClient* client)
-{
+int ServerCpp::op_rget(ConnexioClient* client) {
 	char nom_carpeta[LEN_BUFFER];
 	char fitxer_tar[LEN_BUFFER + 64];
-	char comanda[LEN_PATH * 2];
+	char comanda[512];
 	char ruta_real_carpeta[LEN_PATH];
 	struct stat st;
 
-	// 1. Llegir nom de la carpeta
-	if (read(client->getSocketCli(), nom_carpeta, sizeof(nom_carpeta) - 1) <= 0) return -1;
-	nom_carpeta[strlen(nom_carpeta)] = '\0';
-
-	if (strstr(nom_carpeta, "..")) return -1;
+	memset(nom_carpeta, 0, LEN_BUFFER);
+	if (read(client->getSocketCli(), nom_carpeta, LEN_BUFFER) <= 0) return -1;
 
 	construir_ruta_real(client, nom_carpeta, ruta_real_carpeta);
-	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_rget_%d.tar.gz", client->getSocketCli());
+	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_%d.tar.gz", client->getSocketCli());
 
-	// 2. Comprimir
 	snprintf(comanda, sizeof(comanda), "tar -czf %s -C %s . 2>/dev/null", fitxer_tar, ruta_real_carpeta);
-	if (system(comanda) != 0) {
-		long error = -1;
-		write(client->getSocketCli(), &error, sizeof(long));
-		return -2;
-	}
+	system(comanda);
 
-	// 3. Enviar mida i dades
-	int fd_tar = open(fitxer_tar, O_RDONLY);
-	if (fd_tar >= 0 && fstat(fd_tar, &st) == 0) {
-		long mida = (long)st.st_size; // Forcem cast a long
-		write(client->getSocketCli(), &mida, sizeof(long));
+	int fd = open(fitxer_tar, O_RDONLY);
+	if (fd >= 0 && fstat(fd, &st) == 0) {
+		long long mida_t = (long long)st.st_size; // UNIFICAT A 8 BYTES
+		write(client->getSocketCli(), &mida_t, sizeof(long long));
 
-		char buffer[LEN_PAQUET];
+		char buf[LEN_PAQUET];
 		ssize_t n;
-		while ((n = read(fd_tar, buffer, sizeof(buffer))) > 0) {
-			write(client->getSocketCli(), buffer, n);
+		while ((n = read(fd, buf, sizeof(buf))) > 0) {
+			write(client->getSocketCli(), buf, n);
 		}
-		close(fd_tar);
+		close(fd);
 	}
-
 	unlink(fitxer_tar);
 	return 0;
 }
-
 
 //********************** Gestió d'usuaris **********************
 
