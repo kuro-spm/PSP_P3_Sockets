@@ -58,8 +58,8 @@ private:
 
 
     // --- Funcionalitats (Comandes del Protocol) ---
+    void op_cd(ConnexioClient* client);
     int op_dir(ConnexioClient* client);
-    int op_cd(ConnexioClient* client);
     int op_get(ConnexioClient* client);
     int op_rget(ConnexioClient* client);
 };
