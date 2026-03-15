@@ -340,15 +340,19 @@ int ServerCpp::op_rget(ConnexioClient* client) {
 	char ruta_real_carpeta[LEN_PATH];
 	struct stat st;
 
+	// 1. Llegim el nom de la carpeta (bloc fix de 256 bytes per sincronia)
 	memset(nom_carpeta, 0, LEN_BUFFER);
 	if (read(client->getSocketCli(), nom_carpeta, LEN_BUFFER) <= 0) return -1;
 
+	// 2. Construïm la ruta real de la carpeta a comprimir
 	construir_ruta_real(client, nom_carpeta, ruta_real_carpeta);
-	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_%d.tar.gz", client->getSocketCli());
+	snprintf(fitxer_tar, sizeof(fitxer_tar), "temp_rget_%d.tar.gz", client->getSocketCli());
 
+	// 3. Creem el tar.gz (el flag -C canvia al directori abans de comprimir)
 	snprintf(comanda, sizeof(comanda), "tar -czf %s -C %s . 2>/dev/null", fitxer_tar, ruta_real_carpeta);
 	system(comanda);
 
+	// 4. Obrim i enviem la mida en 8 bytes (long long)
 	int fd = open(fitxer_tar, O_RDONLY);
 	if (fd >= 0 && fstat(fd, &st) == 0) {
 		long long mida_t = (long long)st.st_size; // UNIFICAT A 8 BYTES
@@ -361,7 +365,12 @@ int ServerCpp::op_rget(ConnexioClient* client) {
 		}
 		close(fd);
 	}
-	unlink(fitxer_tar);
+	else {
+		long long error = -1;
+		write(client->getSocketCli(), &error, sizeof(long long));
+	}
+
+	unlink(fitxer_tar); // Esborrem el fitxer temporal del servidor
 	return 0;
 }
 

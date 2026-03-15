@@ -193,6 +193,45 @@ int main() {
 			else printf("Error: El fitxer no existeix.\n");
 			break;
 		}
+		case OP_RGET: {
+			char nom_dir[LEN_BUFFER];
+			memset(nom_dir, 0, LEN_BUFFER);
+			printf("Carpeta a descarregar: ");
+			scanf("%s", nom_dir);
+			send(sock, nom_dir, LEN_BUFFER, 0);
+
+			long long mida_tar;
+			if (recv(sock, (char*)&mida_tar, sizeof(long long), 0) > 0 && mida_tar > 0) {
+				int fd_temp = _open("rebut.tar.gz", _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, 0666);
+				long long total_rebut = 0;
+				while (total_rebut < mida_tar) {
+					int n = recv(sock, buffer_rebut, sizeof(buffer_rebut), 0);
+					if (n <= 0) break;
+					_write(fd_temp, buffer_rebut, n);
+					total_rebut += n;
+				}
+				_close(fd_temp);
+
+				_mkdir(nom_dir);
+				char cmd[512];
+				sprintf(cmd, "tar -xzf rebut.tar.gz -C %s", nom_dir);
+				system(cmd);
+				_unlink("rebut.tar.gz");
+
+				char ruta_absoluta[1024];
+				if (_getcwd(ruta_absoluta, sizeof(ruta_absoluta)) != NULL) {
+					printf("[OK] Carpeta '%s' descomprimida correctament a:\n", nom_dir);
+					printf("     %s\\%s\n", ruta_absoluta, nom_dir);
+				}
+				else {
+					printf("[OK] Carpeta '%s' descarregada.\n", nom_dir);
+				}
+			}
+			else {
+				printf("[!] Error: No s'ha pogut rebre la carpeta del servidor.\n");
+			}
+			break;
+		}
 		}
 
 		// --- FINAL DE LA TRANSACCIÓ ---
