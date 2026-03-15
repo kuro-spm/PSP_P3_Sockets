@@ -204,7 +204,7 @@ int main() {
 
 			long long mida_tar;
 			if (read(sock, &mida_tar, sizeof(mida_tar)) > 0 && mida_tar > 0) {
-				printf("[+] Rebent carpeta (%ld bytes)... ", mida_tar);
+				printf("[+] Rebent carpeta (%lld bytes)... ", mida_tar);
 
 				int fd_temp = open("rebut.tar.gz", O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				long long total_rebut = 0;

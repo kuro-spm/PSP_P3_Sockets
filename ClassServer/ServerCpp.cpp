@@ -270,42 +270,46 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 void ServerCpp::op_cd(ConnexioClient* client) {
 	char nou_dir[LEN_PATH];
 	memset(nou_dir, 0, LEN_PATH);
+	// Llegim el que ens envia el client ("..", "subcarpeta", etc.)
 	read(client->getSocketCli(), nou_dir, LEN_PATH);
 
-	char ruta_real[LEN_PATH];
-	construir_ruta_real(client, nou_dir, ruta_real);
+	if (strcmp(nou_dir, "..") == 0) {
+		// LÒGICA PER "PUJAR": Tallem la darrera part del path virtual
+		char path_temp[LEN_PATH];
+		strncpy(path_temp, client->getPathActual(), LEN_PATH);
+		char* darrera_barra = strrchr(path_temp, '/');
 
-	// Intentem canviar de directori al sistema Linux
-	if (chdir(ruta_real) == 0) {
-		// --- AQUÍ ESTÀ LA CLAU: ACTUALITZAR EL PATH VIRTUAL ---
-		if (strcmp(nou_dir, "..") == 0) {
-			// Retrocedir: busquem la darrera barra i la tallem
-			char* path = (char*)client->getPathActual();
-			char* darrera_barra = strrchr(path, '/');
-			if (darrera_barra != NULL && darrera_barra != path) {
-				*darrera_barra = '\0';
-			}
-			else {
-				client->setPathActual("/");
-			}
-		}
-		else if (nou_dir[0] == '/') {
-			client->setPathActual(nou_dir);
+		if (darrera_barra != NULL && darrera_barra != path_temp) {
+			*darrera_barra = '\0'; // Tallem a la darrera barra
+			client->setPathActual(path_temp);
 		}
 		else {
-			// Avançar: concatenem el nou directori
-			char path_nou[LEN_PATH];
-			const char* actual = client->getPathActual();
-			snprintf(path_nou, LEN_PATH, "%s%s%s", actual, (strcmp(actual, "/") == 0 ? "" : "/"), nou_dir);
-			client->setPathActual(path_nou);
+			client->setPathActual("/"); // Ja som a l'arrel
 		}
-
 		int ok = VALID;
 		write(client->getSocketCli(), &ok, sizeof(int));
 	}
 	else {
-		int error = 0;
-		write(client->getSocketCli(), &error, sizeof(int));
+		// LÒGICA PER "BAIXAR": Comprovem si la carpeta existeix abans de canviar
+		char ruta_real_desti[LEN_PATH];
+		construir_ruta_real(client, nou_dir, ruta_real_desti);
+
+		struct stat st;
+		if (stat(ruta_real_desti, &st) == 0 && S_ISDIR(st.st_mode)) {
+			// Si existeix i és directori, actualitzem el path del header
+			char path_nou[LEN_PATH];
+			const char* actual = client->getPathActual();
+			snprintf(path_nou, LEN_PATH, "%s%s%s",
+				actual, (strcmp(actual, "/") == 0 ? "" : "/"), nou_dir);
+			client->setPathActual(path_nou);
+
+			int ok = VALID;
+			write(client->getSocketCli(), &ok, sizeof(int));
+		}
+		else {
+			int error = NO_VALID;
+			write(client->getSocketCli(), &error, sizeof(int));
+		}
 	}
 }
 

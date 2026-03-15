@@ -146,39 +146,23 @@ int main() {
 		}
 
 		case OP_CD: {
-			char nou_dir[LEN_BUFFER];
-			memset(nou_dir, 0, LEN_BUFFER); // NETEJEM SEMPRE EL BUFFER
-			printf("Directori destí: ");
-			scanf("%s", nou_dir);
+			char nou_dir[LEN_PATH]; memset(nou_dir, 0, LEN_PATH);
+			printf("Destí: "); scanf("%s", nou_dir);
+			send(sock, nou_dir, LEN_PATH, 0); // Enviem bloc fix per sincronitzar
 
-			// Enviem exactament LEN_BUFFER perquè el servidor rebi tota la cadena neta
-			send(sock, nou_dir, LEN_BUFFER, 0);
-
-			int ok;
-			recv(sock, (char*)&ok, sizeof(int), 0);
+			int ok; recv(sock, (char*)&ok, sizeof(int), 0);
 			if (ok == VALID) {
-				// Lògica local: si l'usuari posa "..", hem de recular en el nostre path_local
+				// Sincronitzem el path_local segons el que hem enviat
 				if (strcmp(nou_dir, "..") == 0) {
-					char* darrera_barra = strrchr(path_local, '/');
-					if (darrera_barra != NULL && darrera_barra != path_local) {
-						*darrera_barra = '\0';
-					}
-					else {
-						strcpy(path_local, "/");
-					}
-				}
-				else if (nou_dir[0] == '/') {
-					strcpy(path_local, nou_dir);
+					char* barra = strrchr(path_local, '/');
+					if (barra != path_local) *barra = '\0'; else strcpy(path_local, "/");
 				}
 				else {
 					if (strcmp(path_local, "/") != 0) strcat(path_local, "/");
 					strcat(path_local, nou_dir);
 				}
-				printf("Directori actualitzat: %s\n", path_local);
 			}
-			else {
-				printf("Error: El servidor no permet aquest canvi.\n");
-			}
+			else printf("Error de directori.\n");
 			break;
 		}
 
