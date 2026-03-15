@@ -13,11 +13,11 @@
 #define CARPETA_DESCARREGUES "./ftpDownloads"
 #define IP_SERVER "192.168.68.109"
 
-// Funció per mostrar on s'ha desat realment el fitxer en el teu PC
 void mostrar_ruta_local_absoluta(const char* nom_fitxer) {
     char cwd[PATH_MAX];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf("[OK] Fitxer desat localment a: %s/%s\n", cwd, nom_fitxer);
+        // Mostrem la ruta del projecte + la carpeta de descarregues + el fitxer
+        printf("[OK] Fitxer desat a: %s/%s/%s\n", cwd, CARPETA_DESCARREGUES, nom_fitxer);
     }
 }
 
@@ -58,14 +58,11 @@ int main() {
 
     // 1. Preparar carpeta local (Dolphin la veurà aquí)
     system("mkdir -p " CARPETA_DESCARREGUES);
-    if (chdir(CARPETA_DESCARREGUES) != 0) {
-        perror("[ERROR] No s'ha pogut accedir a la carpeta local");
-        return 1;
-    }
-
-    char ruta_verificacio[1024];
-    getcwd(ruta_verificacio, sizeof(ruta_verificacio));
-    printf("[SISTEMA] Estàs treballant a: %s\n", ruta_verificacio);
+    
+    char ruta_base[PATH_MAX];
+    getcwd(ruta_base, sizeof(ruta_base));
+    printf("[SISTEMA] Executant-se des de: %s\n", ruta_base);
+    printf("[SISTEMA] Les descarregues aniran a: %s/%s\n", ruta_base, CARPETA_DESCARREGUES);
 
     demanar_usuari_pwd(&header);
 
@@ -145,16 +142,26 @@ int main() {
 
         case OP_GET: {
             char fitxer[LEN_BUFFER];
+            char ruta_desti[PATH_MAX];
             memset(fitxer, 0, LEN_BUFFER);
+
             printf("Fitxer a baixar del servidor: ");
             scanf("%s", fitxer);
 
-            // Enviem bloc de 256 bytes per sincronitzar amb ServerCpp.cpp:313
+            // Enviem el nom del fitxer al servidor
             write(sock, fitxer, LEN_BUFFER);
 
             long long mida_f;
             if (read(sock, &mida_f, sizeof(long long)) > 0 && mida_f >= 0) {
-                int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                // Preparem la ruta relativa: "./ftpDownloads/nom_fitxer"
+                snprintf(ruta_desti, sizeof(ruta_desti), "%s/%s", CARPETA_DESCARREGUES, fitxer);
+
+                int fd = open(ruta_desti, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                if (fd < 0) {
+                    perror("[ERR] No s'ha pogut crear el fitxer local");
+                    break;
+                }
+
                 long long r = 0;
                 while (r < mida_f) {
                     int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
@@ -163,14 +170,21 @@ int main() {
                     r += n;
                 }
                 close(fd);
-                mostrar_ruta_local_absoluta(fitxer); // El que demanaves!
+
+                // Cridem la funció per mostrar la ruta absoluta real
+                mostrar_ruta_local_absoluta(fitxer);
+            }
+            else {
+                printf("[ERR] El fitxer no existeix al servidor o mida incorrecta.\n");
             }
             break;
         }
 
         case OP_RGET: {
             char carpeta[LEN_BUFFER];
+            char ruta_tar[PATH_MAX];
             memset(carpeta, 0, LEN_BUFFER);
+
             printf("Carpeta a baixar (servidor): ");
             scanf("%s", carpeta);
 
@@ -178,7 +192,10 @@ int main() {
 
             long long mida_t;
             if (read(sock, &mida_t, sizeof(long long)) > 0 && mida_t > 0) {
-                int fd = open("rebut.tar.gz", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                // Ruta on guardarem el tar temporalment
+                snprintf(ruta_tar, sizeof(ruta_tar), "%s/rebut.tar.gz", CARPETA_DESCARREGUES);
+
+                int fd = open(ruta_tar, O_WRONLY | O_CREAT | O_TRUNC, 0666);
                 long long r = 0;
                 while (r < mida_t) {
                     int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
@@ -187,12 +204,19 @@ int main() {
                     r += n;
                 }
                 close(fd);
-                mkdir(carpeta, 0777);
-                char cmd[512];
-                snprintf(cmd, sizeof(cmd), "tar -xzf rebut.tar.gz -C %s 2>/dev/null", carpeta);
+
+                // Comanda per extreure el contingut DINS de ftpDownloads
+                char cmd[1024];
+                snprintf(cmd, sizeof(cmd), "tar -xzf %s -C %s/ 2>/dev/null", ruta_tar, CARPETA_DESCARREGUES);
                 system(cmd);
-                unlink("rebut.tar.gz");
-                mostrar_ruta_local_absoluta(carpeta); // També aquí!
+
+                // Esborrem el fitxer temporal .tar.gz
+                unlink(ruta_tar);
+
+                mostrar_ruta_local_absoluta(carpeta);
+            }
+            else {
+                printf("[ERR] No s'ha pogut descarregar la carpeta.\n");
             }
             break;
         }
