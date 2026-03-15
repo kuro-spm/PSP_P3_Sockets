@@ -144,6 +144,9 @@ void* ServerCpp::gestio_client(void* arg) {
 
 	// 2. VALIDACIÓ D'USUARI
 	int resposta = servidor->validar_usuari(header.usuari, header.contrasenya) ? VALID : NO_VALID;
+	if (resposta == NO_VALID) {
+		printf("[WARNING] Intent d'accés no autoritzat per a l'usuari '%s' des de %s\n", header.usuari, cclient->getIpClient());
+	}
 
 	// Si l'operació és de registre, no validem l'usuari primer (perquè encara no existeix!)
 	// Per tant, només enviem la resposta de validació per a les altres operacions.
