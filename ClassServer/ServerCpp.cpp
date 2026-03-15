@@ -252,7 +252,7 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 	int fd = open(nom_fitxer_temporal, O_RDONLY);
 	if (fd >= 0) {
 		if (fstat(fd, &st) == 0) {
-			long long mida = (long long) st.st_size;
+			long long mida = (long long)st.st_size;
 			// Enviem la mida (8 bytes) perquè el client sàpiga quant llegir
 			write(client->getSocketCli(), &mida, sizeof(long long));
 
@@ -269,49 +269,59 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 
 void ServerCpp::op_cd(ConnexioClient* client) {
 	char nou_dir[LEN_PATH];
+	char ruta_desti_provisional[LEN_PATH];
+	char ruta_absoluta_final[PATH_MAX];
+	char ruta_arrel_absoluta[PATH_MAX];
+	int resposta;
+
+	// 1. Llegim el directori destí que ens envia el client
 	memset(nou_dir, 0, LEN_PATH);
-	// Llegim el que ens envia el client ("..", "subcarpeta", etc.)
-	read(client->getSocketCli(), nou_dir, LEN_PATH);
+	if (read(client->getSocketCli(), nou_dir, LEN_PATH) <= 0) return;
 
-	if (strcmp(nou_dir, "..") == 0) {
-		// LÒGICA PER "PUJAR": Tallem la darrera part del path virtual
-		char path_temp[LEN_PATH];
-		strncpy(path_temp, client->getPathActual(), LEN_PATH);
-		char* darrera_barra = strrchr(path_temp, '/');
+	// 2. Construïm la ruta on l'usuari vol anar (ROOT + PATH_ACTUAL + NOU_DIR)
+	construir_ruta_real(client, nou_dir, ruta_desti_provisional);
 
-		if (darrera_barra != NULL && darrera_barra != path_temp) {
-			*darrera_barra = '\0'; // Tallem a la darrera barra
-			client->setPathActual(path_temp);
-		}
-		else {
-			client->setPathActual("/"); // Ja som a l'arrel
-		}
-		int ok = VALID;
-		write(client->getSocketCli(), &ok, sizeof(int));
+	// 3. Obtenim la ruta absoluta de l'arrel de la pràctica per comparar
+	realpath(FTP_ROOT, ruta_arrel_absoluta);
+
+	// 4. Intentem resoldre la ruta destí amb realpath()
+	// Si realpath retorna NULL, és que la ruta ni tan sols existeix
+	if (realpath(ruta_desti_provisional, ruta_absoluta_final) == NULL) {
+		resposta = NO_VALID;
+		printf("[SEGURETAT] Intent de CD a ruta inexistent: %s\n", nou_dir);
 	}
 	else {
-		// LÒGICA PER "BAIXAR": Comprovem si la carpeta existeix abans de canviar
-		char ruta_real_desti[LEN_PATH];
-		construir_ruta_real(client, nou_dir, ruta_real_desti);
+		// 5. COMPROVACIÓ CRÍTICA: Comença la ruta final per la ruta de l'arrel?
+		// Això impedeix que facin "cd ../../../" i surtin al sistema real
+		if (strncmp(ruta_absoluta_final, ruta_arrel_absoluta, strlen(ruta_arrel_absoluta)) == 0) {
 
-		struct stat st;
-		if (stat(ruta_real_desti, &st) == 0 && S_ISDIR(st.st_mode)) {
-			// Si existeix i és directori, actualitzem el path del header
-			char path_nou[LEN_PATH];
-			const char* actual = client->getPathActual();
-			snprintf(path_nou, LEN_PATH, "%s%s%s",
-				actual, (strcmp(actual, "/") == 0 ? "" : "/"), nou_dir);
-			client->setPathActual(path_nou);
+			// Si és segur, fem el chdir físic
+			if (chdir(ruta_absoluta_final) == 0) {
+				resposta = VALID;
 
-			int ok = VALID;
-			write(client->getSocketCli(), &ok, sizeof(int));
+				// Actualitzem el path virtual del client (traient la part del FTP_ROOT)
+				// Això serveix perquè el següent 'ls' sàpiga on és
+				const char* path_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
+				if (strlen(path_relatiu) == 0) client->setPathActual("/");
+				else client->setPathActual(path_relatiu);
+
+				printf("[OK] CD permès a: %s\n", ruta_absoluta_final);
+			}
+			else {
+				resposta = NO_VALID;
+			}
 		}
 		else {
-			int error = NO_VALID;
-			write(client->getSocketCli(), &error, sizeof(int));
+			// L'usuari ha intentat sortir de la carpeta de la pràctica!
+			resposta = NO_VALID;
+			printf("[ALERTA SEGURETAT] Intent de sortir de l'arrel: %s\n", ruta_absoluta_final);
 		}
 	}
+
+	// 6. Enviem el resultat al client
+	write(client->getSocketCli(), &resposta, sizeof(int));
 }
+
 
 int ServerCpp::op_get(ConnexioClient* client)
 {
