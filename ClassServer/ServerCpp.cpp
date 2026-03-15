@@ -267,62 +267,48 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 	return 0;
 }
 
-int ServerCpp::op_cd(ConnexioClient* client) {
-	char nou_path_virtual[LEN_PATH];
-	char ruta_real_proposada[LEN_PATH + 64];
-	int resultat = NO_VALID;
+void ServerCpp::op_cd(ConnexioClient* client) {
+	char nou_dir[LEN_PATH];
+	memset(nou_dir, 0, LEN_PATH);
+	read(client->getSocketCli(), nou_dir, LEN_PATH);
 
-	if (read(client->getSocketCli(), nou_path_virtual, LEN_PATH - 1) > 0) {
-		nou_path_virtual[strlen(nou_path_virtual)] = '\0';
+	char ruta_real[LEN_PATH];
+	construir_ruta_real(client, nou_dir, ruta_real);
 
-		char path_aux[LEN_PATH + 32];
-
-		// GESTIÓ DEL ".." (Pujar nivell)
-		if (strcmp(nou_path_virtual, "..") == 0) {
-			if (strcmp(client->getPathActual(), "/") == 0) {
-				// Ja som a l'arrel virtual, no podem pujar més
-				resultat = NO_VALID;
+	// Intentem canviar de directori al sistema Linux
+	if (chdir(ruta_real) == 0) {
+		// --- AQUÍ ESTÀ LA CLAU: ACTUALITZAR EL PATH VIRTUAL ---
+		if (strcmp(nou_dir, "..") == 0) {
+			// Retrocedir: busquem la darrera barra i la tallem
+			char* path = (char*)client->getPathActual();
+			char* darrera_barra = strrchr(path, '/');
+			if (darrera_barra != NULL && darrera_barra != path) {
+				*darrera_barra = '\0';
 			}
 			else {
-				// Copiem el path actual i busquem l'última barra per tallar
-				strncpy(path_aux, client->getPathActual(), sizeof(path_aux) - 1);
-				char* darrera_barra = strrchr(path_aux, '/');
-				if (darrera_barra != NULL) {
-					if (darrera_barra == path_aux) {
-						// Estàvem a "/carpeta", passem a "/"
-						strcpy(path_aux, "/");
-					}
-					else {
-						*darrera_barra = '\0';
-					}
-					resultat = VALID;
-				}
+				client->setPathActual("/");
 			}
 		}
-		// GESTIÓ DE RUTES NORMAL 
-		else if (strstr(nou_path_virtual, "..") == NULL) {
-			if (nou_path_virtual[0] != '/') {
-				snprintf(path_aux, sizeof(path_aux), "%s/%s", client->getPathActual(), nou_path_virtual);
-			}
-			else {
-				strncpy(path_aux, nou_path_virtual, sizeof(path_aux) - 1);
-			}
-
-			// Comprovem si el directori existeix realment
-			snprintf(ruta_real_proposada, sizeof(ruta_real_proposada), "%s%s", FTP_ROOT, path_aux);
-			DIR* dir = opendir(ruta_real_proposada);
-			if (dir) {
-				closedir(dir);
-				resultat = VALID;
-			}
+		else if (nou_dir[0] == '/') {
+			client->setPathActual(nou_dir);
+		}
+		else {
+			// Avançar: concatenem el nou directori
+			char path_nou[LEN_PATH];
+			const char* actual = client->getPathActual();
+			snprintf(path_nou, LEN_PATH, "%s%s%s", actual, (strcmp(actual, "/") == 0 ? "" : "/"), nou_dir);
+			client->setPathActual(path_nou);
 		}
 
-		// Si el resultat és VALID, el servidor NO actualitza el client aquí (recorda que és transaccional)
-		// Només enviem el OK/ERROR. El client s'actualitzarà ell mateix si rep VALID.
-		write(client->getSocketCli(), &resultat, sizeof(int));
+		int ok = VALID;
+		write(client->getSocketCli(), &ok, sizeof(int));
 	}
-	return (resultat == VALID) ? 0 : -1;
+	else {
+		int error = 0;
+		write(client->getSocketCli(), &error, sizeof(int));
+	}
 }
+
 int ServerCpp::op_get(ConnexioClient* client)
 {
 	char nom_fitxer[LEN_BUFFER];

@@ -125,7 +125,7 @@ int main() {
 			long long mida;
 			if (read(sock, &mida, sizeof(mida)) > 0) {
 				long long rebut = 0;
-				printf("\n--- Contingut de %s (%ld bytes) ---\n", path_local, mida);
+				printf("\n--- Contingut de %s (%lld bytes) ---\n", path_local, mida);
 				while (rebut < mida) {
 					int n = read(sock, buffer_rebut, sizeof(buffer_rebut) - 1);
 					if (n <= 0) break;
@@ -165,15 +165,15 @@ int main() {
 			scanf("%s", fitxer);
 			write(sock, fitxer, strlen(fitxer) + 1);
 
-			long mida_f;
-			if (read(sock, &mida_f, sizeof(long)) > 0 && mida_f >= 0) {
+			long long mida_f;
+			if (read(sock, &mida_f, sizeof(mida_f)) > 0 && mida_f >= 0) {
 				int fd = open(fitxer, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 				if (fd < 0) {
 					perror("Error al crear el fitxer local");
 					break;
 				}
 
-				long total_f = 0;
+				long long total_f = 0;
 				while (total_f < mida_f) {
 					int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
 					if (n <= 0) break;
@@ -202,12 +202,12 @@ int main() {
 			scanf("%s", nom_dir);
 			write(sock, nom_dir, strlen(nom_dir) + 1);
 
-			long mida_tar;
-			if (read(sock, &mida_tar, sizeof(long)) > 0 && mida_tar > 0) {
+			long long mida_tar;
+			if (read(sock, &mida_tar, sizeof(mida_tar)) > 0 && mida_tar > 0) {
 				printf("[+] Rebent carpeta (%ld bytes)... ", mida_tar);
 
 				int fd_temp = open("rebut.tar.gz", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-				long total_rebut = 0;
+				long long total_rebut = 0;
 				while (total_rebut < mida_tar) {
 					int n = read(sock, buffer_rebut, sizeof(buffer_rebut));
 					if (n <= 0) break;
