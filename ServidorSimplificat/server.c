@@ -194,12 +194,13 @@ void* gestio_client(void* arg) {
 			op_cd(client);
 			break;
 		}
-		}case OP_GET: {
+		case OP_GET: {
 			if (op_get(client) < 0) {
 				printf("[ERROR] Error executant OP_GET.\n");
 			}
 			break;
-		}case OP_RGET: {
+		}
+		case OP_RGET: {
 			if (op_rget(client) < 0) {
 				printf("[ERROR] Error executant OP_RGET.\n");
 			}
@@ -208,10 +209,11 @@ void* gestio_client(void* arg) {
 		default:
 			printf("[WARNING] Operació desconeguda: %d\n", header.operacio);
 			break;
+		}
+
 	}
 	close(client->socket);
 	return finalitza_client(arg, 0);
-
 }
 
 
@@ -576,5 +578,69 @@ int op_rget(t_client* client) {
 
 	// 4. Neteja el disc
 	unlink(fitxer_tar);
+	return 0;
+}
+
+void op_cd(t_client* client) {
+	char nou_dir[LEN_PATH];
+	char ruta_desti_provisional[PATH_MAX];
+	char ruta_absoluta_final[PATH_MAX];
+	char ruta_arrel_absoluta[PATH_MAX];
+	int resposta = NO_VALID;
+
+	// 1. Llegim el bloc fix per netejar el socket
+	memset(nou_dir, 0, LEN_PATH);
+	if (read(client->socket, nou_dir, LEN_PATH) <= 0) return;
+
+	// 2. Resoldre rutes per seguretat
+	construir_ruta_real(client, nou_dir, ruta_desti_provisional);
+	realpath(FTP_ROOT, ruta_arrel_absoluta);
+
+	if (realpath(ruta_desti_provisional, ruta_absoluta_final) != NULL) {
+		// 3. Comprovar que no surti de l'arrel (evitar cd ../..)
+		if (strncmp(ruta_absoluta_final, ruta_arrel_absoluta, strlen(ruta_arrel_absoluta)) == 0) {
+			// 4. Actualitzem el path virtual del client
+			const char* p_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
+			strcpy(client->path_actual, strlen(p_relatiu) == 0 ? "/" : p_relatiu);
+			resposta = VALID;
+			printf("[OK] CD a: %s\n", ruta_absoluta_final);
+		}
+		else {
+			printf("[ALERTA] Intent de fuga: %s\n", ruta_absoluta_final);
+		}
+	}
+
+	// 5. Enviem la resposta
+	write(client->socket, &resposta, sizeof(int));
+}
+
+int op_get(t_client* client) {
+	char nom_fitxer[LEN_BUFFER];
+	char ruta_real[PATH_MAX];
+	char buffer[LEN_PAQUET];
+	struct stat st;
+
+	memset(nom_fitxer, 0, LEN_BUFFER);
+	if (read(client->socket, nom_fitxer, LEN_BUFFER) <= 0) return -1;
+
+	construir_ruta_real(client, nom_fitxer, ruta_real);
+	int fd = open(ruta_real, O_RDONLY);
+
+	if (fd < 0) {
+		long long error = -1; // Enviem error en 8 bytes
+		write(client->socket, &error, sizeof(long long));
+		return -2;
+	}
+
+	fstat(fd, &st);
+	long long mida_gran = (long long)st.st_size;
+	write(client->socket, &mida_gran, sizeof(long long));
+
+	ssize_t n;
+	while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+		write(client->socket, buffer, n);
+	}
+	close(fd);
+	printf("[INFO] Fitxer enviat correctament: %s\n", ruta_real);
 	return 0;
 }
