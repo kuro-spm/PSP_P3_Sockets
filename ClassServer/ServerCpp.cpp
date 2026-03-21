@@ -185,8 +185,6 @@ void* ServerCpp::gestio_client(void* arg) {
 	return NULL;
 }
 
-
-
 void ServerCpp::finalitzar_connexio_client(ConnexioClient* client)
 {
 	client->tancarConnexio();
