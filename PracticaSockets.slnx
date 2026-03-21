@@ -12,7 +12,7 @@
     <Deploy />
   </Project>
   <Project Path="ClientWin/ClientWin.vcxproj" Id="327df97f-8825-4f32-8cb7-2a7ceb1af6f9" />
-  <Project Path="Server/Server.vcxproj" Id="7d919f30-60d5-415f-b48f-72f336a51eb7">
+  <Project Path="ServidorSimplificat/ServidorSimplificat.vcxproj" Id="239b449c-7bef-4581-8070-b1394357492d">
     <Platform Solution="*|x86" Project="x86" />
     <Deploy />
   </Project>
