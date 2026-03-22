@@ -11,8 +11,7 @@
 #include <stdlib.h>     // Per a malloc() i free()
 #include <sys/wait.h>   // Per a waitpid() i les macros WIFEXITED, etc.
 #include <fcntl.h>		// Per a open() i O_RDONLY
-#include <limits.h>		// Per a PATH_MAX
-
+#include <limits.h>     // Per a PATH_MAX
 
 // Definició de constants. Nota: Seria millor fer l'include de "Dades.h" però per evitar confusions i mantenir aquest codi autònom, les definim aquí directament.
 #define PORT_SERVEI 10235
@@ -21,18 +20,20 @@
 #define NO_VALID 0
 #define LEN_USUARI 30
 #define LEN_CONTRASENYA 30
-#define LEN_PAQUET 1024
+#define LEN_PAQUET 4096
 #define LEN_PATH 512
 #define LEN_BUFFER 256
 #define MAX_CLIENTS 20
-
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 //Errors
 #define ERR_CON -1
 #define ERR_AUTH -2
-#define ERR_ -3
-#define ERR_FILE -4
+#define ERR_FILE -3
 
-
+#define FITXER_USUARIS "usuaris.txt"
+#define FITXER_TMP "usuaris_tmp.txt"
 #define FTP_ROOT "./ftp_root"  // Aquest serà el límit màxim del client
 #define PATH_DEFECTE "/"       // El client veurà l'arrel com "/"
 
@@ -52,7 +53,6 @@ enum CodisOperacio {
 typedef struct {
 	int operacio;
 	int versio;
-	char path_actual[LEN_PATH];
 	int len;
 } t_header;
 
@@ -61,6 +61,7 @@ typedef struct {
 	pthread_t th;
 	int ocupat;
 	int validat;
+	char path_actual[LEN_PATH];
 } t_client;
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
@@ -89,6 +90,7 @@ void init_clients(t_client* clients) {
 		clients[i].socket = SOCKET_ATURAT;
 		clients[i].ocupat = 0;
 		clients[i].validat = 0;
+		strcpy(clients[i].path_actual, PATH_DEFECTE);
 	}
 }
 
@@ -103,7 +105,10 @@ int pos_taula_clients(t_client* clients) {
 
 //--------------Funcions del servidor--------------
 //-------------------------------------------------
-
+void op_cd(t_client* client);
+int op_dir(t_client* client);
+int op_get(t_client* client);
+int op_rget(t_client* client);
 
 
 
@@ -265,6 +270,8 @@ int main()
 		exit(EXIT_FAILURE);
 	}
 
+	printf("Servidor FTP engegat al port %d. Esperant connexions...\n", PORT_SERVEI);
+
 	// 5. Bucle principal per acceptar clients
 	socklen_t client_len = sizeof(client_addr);
 
@@ -319,7 +326,7 @@ unsigned long xifrar_password(const char* password) {
 
 int existeix_usuari(const char* username) {
 	pthread_mutex_lock(&mut);
-	FILE* fitxer = fopen("usuaris.txt", "r");
+	FILE* fitxer = fopen(FITXER_USUARIS, "r");
 	if (!fitxer) {
 		pthread_mutex_unlock(&mut);
 		return ERR_FILE;
@@ -344,7 +351,7 @@ int registrar_usuari(const char* username, const char* password) {
 	if (existeix_usuari(username) == VALID) return -1; // Usuari ja existeix
 
 	pthread_mutex_lock(&mut);
-	FILE* fitxer = fopen("usuaris.txt", "a");
+	FILE* fitxer = fopen(FITXER_USUARIS, "a");
 	if (!fitxer) {
 		pthread_mutex_unlock(&mut);
 		return ERR_FILE;
@@ -359,7 +366,7 @@ int registrar_usuari(const char* username, const char* password) {
 
 int validar_usuari(const char* usr, const char* pwd) {
 	pthread_mutex_lock(&mut);
-	FILE* fitxer = fopen("usuaris.txt", "r");
+	FILE* fitxer = fopen(FITXER_USUARIS, "r");
 	if (!fitxer) {
 		pthread_mutex_unlock(&mut);
 		return NO_VALID;
@@ -386,8 +393,8 @@ int validar_usuari(const char* usr, const char* pwd) {
 
 void incrementar_comptador(const char* username) {
 	pthread_mutex_lock(&mut);
-	FILE* fitxer = fopen("usuaris.txt", "r");
-	FILE* temp = fopen("usuaris.tmp", "w");
+	FILE* fitxer = fopen(FITXER_USUARIS, "r");
+	FILE* temp = fopen(FITXER_TMP, "w");
 
 	if (!fitxer || !temp) {
 		if (fitxer) fclose(fitxer);
@@ -410,8 +417,8 @@ void incrementar_comptador(const char* username) {
 	fclose(fitxer);
 	fclose(temp);
 
-	remove("usuaris.txt");
-	rename("usuaris.tmp", "usuaris.txt");
+	remove(FITXER_USUARIS);
+	rename(FITXER_TMP, FITXER_USUARIS);
 
 	pthread_mutex_unlock(&mut);
 }
@@ -588,29 +595,49 @@ void op_cd(t_client* client) {
 	char ruta_arrel_absoluta[PATH_MAX];
 	int resposta = NO_VALID;
 
-	// 1. Llegim el bloc fix per netejar el socket
+	// 1. Llegim el directori sol·licitat pel client (netejant el buffer primer)
 	memset(nou_dir, 0, LEN_PATH);
-	if (read(client->socket, nou_dir, LEN_PATH) <= 0) return;
-
-	// 2. Resoldre rutes per seguretat
-	construir_ruta_real(client, nou_dir, ruta_desti_provisional);
-	realpath(FTP_ROOT, ruta_arrel_absoluta);
-
-	if (realpath(ruta_desti_provisional, ruta_absoluta_final) != NULL) {
-		// 3. Comprovar que no surti de l'arrel (evitar cd ../..)
-		if (strncmp(ruta_absoluta_final, ruta_arrel_absoluta, strlen(ruta_arrel_absoluta)) == 0) {
-			// 4. Actualitzem el path virtual del client
-			const char* p_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
-			strcpy(client->path_actual, strlen(p_relatiu) == 0 ? "/" : p_relatiu);
-			resposta = VALID;
-			printf("[OK] CD a: %s\n", ruta_absoluta_final);
-		}
-		else {
-			printf("[ALERTA] Intent de fuga: %s\n", ruta_absoluta_final);
-		}
+	if (read(client->socket, nou_dir, LEN_PATH) <= 0) {
+		return; // Error de lectura o client desconnectat
 	}
 
-	// 5. Enviem la resposta
+	// 2. Construïm la ruta provisional combinant l'arrel FTP, el path actual i el nou
+	construir_ruta_real(client, nou_dir, ruta_desti_provisional);
+
+	// 3. Obtenim la ruta absoluta real de la carpeta arrel del servidor
+	if (realpath(FTP_ROOT, ruta_arrel_absoluta) == NULL) {
+		perror("[ERROR CRÍTIC] No s'ha pogut resoldre l'arrel FTP (existeix la carpeta?)");
+		write(client->socket, &resposta, sizeof(int));
+		return;
+	}
+
+	// 4. Resolem la ruta destí per eliminar ".." o "." i validem que existeixi
+	// realpath retornarà NULL si la carpeta que ha demanat el client no existeix
+	if (realpath(ruta_desti_provisional, ruta_absoluta_final) != NULL) {
+
+		// 5. Comprovem que la ruta final estigui DINS de la carpeta arrel del servidor
+		if (strncmp(ruta_absoluta_final, ruta_arrel_absoluta, strlen(ruta_arrel_absoluta)) == 0) {
+
+			// Extraiem la part relativa a l'arrel (el nou path virtual del client)
+			const char* p_relatiu = ruta_absoluta_final + strlen(ruta_arrel_absoluta);
+			const char* nou_path = (strlen(p_relatiu) == 0) ? "/" : p_relatiu;
+
+			// 6. Actualitzem el path del client de forma segura (evitant buffer overflow)
+			strncpy(client->path_actual, nou_path, LEN_PATH - 1);
+			client->path_actual[LEN_PATH - 1] = '\0';
+
+			resposta = VALID;
+			printf("[OK] CD a: %s (Path virtual: %s)\n", ruta_absoluta_final, client->path_actual);
+		}
+		else {
+			printf("[ALERTA] Intent de fuga detectat cap a: %s\n", ruta_absoluta_final);
+		}
+	}
+	else {
+		printf("[INFO] Intent de CD a un directori inexistent: %s\n", ruta_desti_provisional);
+	}
+
+	// 7. Enviem la resposta final al client (1 = VALID, 0 = NO_VALID)
 	write(client->socket, &resposta, sizeof(int));
 }
 
