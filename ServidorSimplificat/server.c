@@ -12,6 +12,7 @@
 #include <sys/wait.h>   // Per a waitpid() i les macros WIFEXITED, etc.
 #include <fcntl.h>		// Per a open() i O_RDONLY
 #include <limits.h>     // Per a PATH_MAX
+#include <signal.h>     // Per capturar Ctrl+C (SIGINT)
 
 // Definició de constants. Nota: Seria millor fer l'include de "Dades.h" però per evitar confusions i mantenir aquest codi autònom, les definim aquí directament.
 #define PORT_SERVEI 10235
@@ -65,6 +66,9 @@ typedef struct {
 } t_client;
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
+t_client clients[MAX_CLIENTS];
+int server_socket_global = -1;
+
 
 //---------------Prototipus de Gestió d'Usuaris---------------
 unsigned long xifrar_password(const char* password);
@@ -83,7 +87,34 @@ int op_rget(t_client* client);
 
 //---------------Funcions auxiliars---------------
 //------------------------------------------------
+void handler_senyals(int sig) {
+	if (sig == SIGINT) {
+		printf("\n[INFO] S'ha rebut Ctrl+C. Iniciant tancament segur...\n");
 
+		// 1. Tancar el socket principal (deixa d'acceptar nous clients)
+		if (server_socket_global != -1) {
+			close(server_socket_global);
+			printf("[INFO] Port d'escolta alliberat.\n");
+		}
+
+		// 2. Avisar i desconnectar els clients actius
+		pthread_mutex_lock(&mut);
+		for (int i = 0; i < MAX_CLIENTS; i++) {
+			if (clients[i].ocupat == 1) {
+				printf("[INFO] Forçant desconnexió del client al slot %d...\n", i);
+				// Tancar el socket fa que el read() del fil falli i el fil acabi de forma natural
+				if (clients[i].socket != SOCKET_ATURAT) {
+					close(clients[i].socket);
+				}
+				// Si algun fil fos molt rebel, es podria forçar amb: pthread_cancel(clients[i].th);
+			}
+		}
+		pthread_mutex_unlock(&mut);
+
+		printf("[INFO] Servidor tancat completament. Adeu!\n");
+		exit(0);
+	}
+}
 
 void init_clients(t_client* clients) {
 	for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -232,9 +263,10 @@ void* gestio_client(void* arg) {
 
 int main()
 {
-	t_client clients[MAX_CLIENTS];
 	int server_socket, client_socket;
 	struct sockaddr_in server_addr, client_addr;
+
+	signal(SIGINT, handler_senyals);
 
 	// 1. Crear socket del servidor
 	// AF_INET: IPv4, 
@@ -244,6 +276,7 @@ int main()
 		perror("Error creant socket");
 		exit(EXIT_FAILURE);
 	}
+	server_socket_global = server_socket;
 
 	// 2. Configurar adreça del servidor
 	server_addr.sin_family = AF_INET;
