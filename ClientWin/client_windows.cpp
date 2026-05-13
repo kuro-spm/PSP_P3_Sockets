@@ -17,7 +17,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #define CARPETA_DESCARREGUES "./ftp_downloads"
-#define IP_SERVER "192.168.68.109"
+#define IP_SERVER "10.2.31.249"
 
 // Demana l'usuari i la contrasenya
 void demanar_usuari_pwd(ConnectionHeader* h) {

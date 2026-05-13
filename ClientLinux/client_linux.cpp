@@ -11,7 +11,7 @@
 #include "../ClassServer/Dades.h"
 
 #define CARPETA_DESCARREGUES "./ftpDownloads"
-#define IP_SERVER "192.168.68.109"
+#define IP_SERVER "10.2.31.249"
 
 void mostrar_ruta_local_absoluta(const char* nom_fitxer) {
     char cwd[PATH_MAX];
@@ -116,13 +116,11 @@ int main() {
             printf("Nou directori al SERVIDOR: ");
             scanf("%s", nou_dir);
 
-            // Enviem bloc de 256 bytes per sincronitzar amb ServerCpp.cpp:274
             write(sock, nou_dir, LEN_PATH);
 
             int ok;
             read(sock, &ok, sizeof(int));
             if (ok == VALID) {
-                // Actualitzem només la referència visual per al menú
                 if (strcmp(nou_dir, "..") == 0) {
                     char* barra = strrchr(path_server_virtual, '/');
                     if (barra != path_server_virtual && barra != NULL) *barra = '\0';

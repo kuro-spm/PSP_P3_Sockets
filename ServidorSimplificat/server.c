@@ -50,12 +50,23 @@ enum CodisOperacio {
 	NUM_OPERACIONS // Aquest valor no s'utilitza com a operació real, sinó com a límit superior (té valor de l'ultim+1)
 };
 
-// Estructura del protocold
+// Estructura del protocol usada internament pel servidor
 typedef struct {
 	int operacio;
 	int versio;
 	int len;
 } t_header;
+
+// Estructura del protocol del client Linux (ha de coincidir amb Dades.h)
+// El client envia SEMPRE aquest header complet (584 bytes) amb les credencials incloses.
+typedef struct {
+	int operacio;
+	int versio;
+	char usuari[LEN_USUARI];
+	char contrasenya[LEN_CONTRASENYA];
+	char path_actual[LEN_PATH];
+	int len;
+} ConnectionHeader;
 
 typedef struct {
 	int socket;
@@ -157,15 +168,21 @@ void* finalitza_client(void* arg, int err) {
 
 void* gestio_client(void* arg) {
 	t_client* client = (t_client*)arg;
-	t_header header;
+	ConnectionHeader header;
 	int resp;
 
 	while (1) {
 
-		//Llegir Header inicial
-		if ((resp = read(client->socket, &header, sizeof(t_header))) < 0) {
-			perror("Error llegint header");
-			return finalitza_client(arg, ERR_CON);
+		// Llegir el ConnectionHeader complet que envia el client Linux.
+		// El client sempre envia aquest header de 584 bytes (operacio + versio +
+		// usuari + contrasenya + path_actual + len) i espera una resposta de
+		// validació (int) IMMEDIATAMENT després.
+		memset(&header, 0, sizeof(ConnectionHeader));
+		resp = read(client->socket, &header, sizeof(ConnectionHeader));
+		if (resp <= 0) {
+			if (resp < 0) perror("Error llegint header");
+			// resp == 0: client tancat normalment (EOF)
+			return finalitza_client(arg, resp < 0 ? ERR_CON : 0);
 		}
 
 		if (header.operacio == OP_SORTIR) {
@@ -173,60 +190,32 @@ void* gestio_client(void* arg) {
 			break;
 		}
 
-		if (client->validat == 0 && header.operacio != OP_LOGIN && header.operacio != OP_REGISTRE) {
-			printf("[LOG] Intent d'operació sense validar.\n");
-			continue;
+		// Validar les credencials incloses al header.
+		// El client espera rebre aquesta resposta (int) abans de continuar.
+		int valid = validar_usuari(header.usuari, header.contrasenya);
+		write(client->socket, &valid, sizeof(int));
+
+		if (valid != VALID) {
+			printf("[LOG] Validació fallida per a l'usuari '%s'.\n", header.usuari);
+			break;
 		}
 
+		printf("[LOG] Usuari '%s' autenticat. Operació: %d  Path: %s\n",
+			header.usuari, header.operacio, header.path_actual);
+
+		// Actualitzem el path virtual del client amb el que ens envia al header,
+		// ja que el client reconnecta per a cada operació i cal restaurar el context.
+		strncpy(client->path_actual, header.path_actual, LEN_PATH - 1);
+		client->path_actual[LEN_PATH - 1] = '\0';
+
 		switch (header.operacio) {
-		case OP_LOGIN: {
-			char username[LEN_USUARI + 1];
-			char password[LEN_CONTRASENYA + 1];
-			// Llegim username i password
-			if (read(client->socket, username, LEN_USUARI) <= 0 ||
-				read(client->socket, password, LEN_CONTRASENYA) <= 0) {
-				perror("Error llegint credencials");
-				return finalitza_client(arg, ERR_CON);
-			}
-			int valid = validar_usuari(username, password);
-			write(client->socket, &valid, sizeof(int));
-			if (valid == VALID) {
-				pthread_mutex_lock(&mut);
-				client->validat = 1;
-				pthread_mutex_unlock(&mut);
-				printf("[LOG] Usuari '%s' validat correctament.\n", username);
-			}
-			else {
-				printf("[LOG] Validació fallida per a l'usuari '%s'.\n", username);
-			}
-			break;
-		}
-		case OP_REGISTRE: {
-			char username[LEN_USUARI + 1];
-			char password[LEN_CONTRASENYA + 1];
-			// Llegim username i password
-			if (read(client->socket, username, LEN_USUARI) <= 0 ||
-				read(client->socket, password, LEN_CONTRASENYA) <= 0) {
-				perror("Error llegint credencials");
-				return finalitza_client(arg, ERR_CON);
-			}
-			int res = registrar_usuari(username, password);
-			int resposta_registre = (res == VALID) ? VALID : NO_VALID;
-			write(client->socket, &resposta_registre, sizeof(int));
-			if (res == VALID) {
-				printf("[LOG] Nou usuari registrat: '%s'.\n", username);
-			}
-			else {
-				printf("[LOG] Intent de registre fallit per a l'usuari '%s' (ja existeix).\n", username);
-			}
-			break;
-		}
 		case OP_DIR: {
 			if (op_dir(client) < 0) {
 				printf("[ERROR] Error executant OP_DIR.\n");
 			}
 			break;
-		}case OP_CD: {
+		}
+		case OP_CD: {
 			op_cd(client);
 			break;
 		}
@@ -251,14 +240,6 @@ void* gestio_client(void* arg) {
 	close(client->socket);
 	return finalitza_client(arg, 0);
 }
-
-
-
-
-
-
-
-
 
 
 int main()
