@@ -17,7 +17,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #define CARPETA_DESCARREGUES "./ftp_downloads"
-#define IP_SERVER "10.2.31.249"
+#define IP_SERVER "127.0.0.1"
 
 // Demana l'usuari i la contrasenya
 void demanar_usuari_pwd(ConnectionHeader* h) {
@@ -70,7 +70,9 @@ int main() {
 	// --- 2. GESTIÓ DE CARPETES ---
 	// Linux: system("mkdir -p ...");
 	// Windows: _mkdir (no accepta el flag -p directament)
-	_mkdir(CARPETA_DESCARREGUES);
+	if (_access(CARPETA_DESCARREGUES, 0) != 0) {
+		_mkdir(CARPETA_DESCARREGUES);
+	}
 
 	// Linux: chdir()
 	// Windows: _chdir()
@@ -101,6 +103,7 @@ int main() {
 
 		if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
 			perror("Error de connexió");
+			closesocket(sock);
 			continue;
 		}
 
