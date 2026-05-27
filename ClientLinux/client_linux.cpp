@@ -14,6 +14,12 @@
 #define IP_SERVER_NOT_IN_USE "10.2.31.249"
 #define IP_SERVER "127.0.0.1"
 
+/*Com executar en WSL :
+cd /mnt/c/Users/sprat/Documents/Aa_ICB0/dam2/DAM2_psp/sockets/PracticaSockets
+make
+./bin_linux/client_linux
+*/
+
 void mostrar_ruta_local_absoluta(const char* nom_fitxer) {
     char cwd[PATH_MAX];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
