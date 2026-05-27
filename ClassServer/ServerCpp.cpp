@@ -265,6 +265,11 @@ int ServerCpp::op_dir(ConnexioClient* client) {
 		close(fd);
 		unlink(nom_fitxer_temporal); // Esborrem el temporal
 	}
+	else {
+		// No s'ha pogut obrir el fitxer temporal: enviem mida -1 perquè el client no es pengi
+		long long error = -1;
+		write(client->getSocketCli(), &error, sizeof(long long));
+	}
 	return 0;
 }
 

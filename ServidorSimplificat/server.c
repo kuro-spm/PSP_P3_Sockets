@@ -182,6 +182,7 @@ void* gestio_client(void* arg) {
 		if (resp <= 0) {
 			if (resp < 0) perror("Error llegint header");
 			// resp == 0: client tancat normalment (EOF)
+			close(client->socket);
 			return finalitza_client(arg, resp < 0 ? ERR_CON : 0);
 		}
 
@@ -250,14 +251,18 @@ int main()
 	signal(SIGINT, handler_senyals);
 
 	// 1. Crear socket del servidor
-	// AF_INET: IPv4, 
-	// SOCK_STREAM: TCP, 
+	// AF_INET: IPv4,
+	// SOCK_STREAM: TCP,
 	// 0: protocol per defecte
 	if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("Error creant socket");
 		exit(EXIT_FAILURE);
 	}
 	server_socket_global = server_socket;
+
+	// SO_REUSEADDR: permet reutilitzar el port immediatament després de reiniciar el servidor
+	int opt = 1;
+	setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
 	// 2. Configurar adreça del servidor
 	server_addr.sin_family = AF_INET;
@@ -269,6 +274,14 @@ int main()
 
 	// Preparar taula clients
 	init_clients(clients);
+
+	// Assegurem que existeix la carpeta arrel de l'FTP
+	system("mkdir -p " FTP_ROOT);
+
+	// Registrem els usuaris per defecte (si ja existeixen, registrar_usuari ho ignora)
+	registrar_usuari("alumne", "alumne");
+	registrar_usuari("sara", "prats");
+	registrar_usuari("marc", "brufau");
 
 	// 3. Enllaçar socket a l'adreça
 	if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
