@@ -166,6 +166,20 @@ void* finalitza_client(void* arg, int err) {
 	return NULL;
 }
 
+// Llegeix exactament n bytes del socket, fent tants read() com calgui.
+// Retorna n si tot bé, 0 si el client ha tancat, -1 si hi ha error.
+static ssize_t read_all(int fd, void* buf, size_t n) {
+	size_t total = 0;
+	uint8_t* ptr = (uint8_t*)buf;
+	while (total < n) {
+		ssize_t r = read(fd, ptr + total, n - total);
+		if (r < 0) return -1;
+		if (r == 0) return 0; // EOF: client tancat
+		total += (size_t)r;
+	}
+	return (ssize_t)total;
+}
+
 void* gestio_client(void* arg) {
 	t_client* client = (t_client*)arg;
 	ConnectionHeader header;
@@ -178,7 +192,7 @@ void* gestio_client(void* arg) {
 		// usuari + contrasenya + path_actual + len) i espera una resposta de
 		// validació (int) IMMEDIATAMENT després.
 		memset(&header, 0, sizeof(ConnectionHeader));
-		resp = read(client->socket, &header, sizeof(ConnectionHeader));
+		resp = read_all(client->socket, &header, sizeof(ConnectionHeader));
 		if (resp <= 0) {
 			if (resp < 0) perror("Error llegint header");
 			// resp == 0: client tancat normalment (EOF)
@@ -481,6 +495,8 @@ int op_dir(t_client* client) {
 	char* buffer_llista = (char*)malloc(mida_maxima);
 	if (!buffer_llista) {
 		closedir(dir);
+		long long error = -1;
+		write(client->socket, &error, sizeof(long long));
 		return -1;
 	}
 	buffer_llista[0] = '\0'; // Inicialitzem com a string buit
